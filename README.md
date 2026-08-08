@@ -10,6 +10,12 @@ COOKED? V1 is a focused daily student companion with:
 - Suggestions / feedback
 - About / support
 
+## Before / After UI
+
+| Before | After |
+| --- | --- |
+| ![Before UI](public/screenshots/before.png) | ![After UI](public/screenshots/after.png) |
+
 ## Run locally
 
 ```bash
