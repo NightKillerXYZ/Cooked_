@@ -5,15 +5,36 @@ import { fetchHistoryOfTheDay } from './api/historyApi'
 import { fetchLawOfTheDay } from './api/lawApi'
 import { fetchOpportunities } from './api/opportunitiesApi'
 import { submitSuggestion } from './api/feedbackApi'
-import { submitSupportRequest } from './api/supportApi'
 
 const app = document.querySelector('#app')
 
+const TABS = ['HOME', 'QUESTS', 'PROGRESS', 'REWARDS', 'PROFILE']
+
+const QUEST_META = {
+  attendance: { title: 'Attendance', icon: '🗓️', reward: 10 },
+  history: { title: 'History', icon: '📖', reward: 30 },
+  law: { title: 'Law', icon: '⚖️', reward: 30 },
+  opportunities: { title: 'Opportunities', icon: '🏆', reward: 20 },
+  dailyBrief: { title: 'Daily Brief', icon: '📰', reward: 20 },
+  surprise: { title: 'Surprise', icon: '🔒', reward: 0, locked: true },
+}
+
 const state = {
-  activeView: 'Home',
-  activeLearn: 'History',
-  activeMore: 'Suggestions',
-  greetingName: 'Shorya',
+  user: {
+    name: 'Shorya',
+    streak: 7,
+    longestStreak: 12,
+    level: 12,
+    xp: 2840,
+    levelCap: 3000,
+    dailyXp: 120,
+    weeklyXp: 440,
+    monthlyXp: 1780,
+    achievements: ['Consistency Starter', 'Law Explorer', 'Early Bird'],
+  },
+  activeTab: 'HOME',
+  activeQuestId: null,
+  xpToast: '',
   attendance: {
     overall: 86,
     status: 'Healthy',
@@ -24,384 +45,435 @@ const state = {
       { name: 'Computer Science', present: 29, total: 34, status: 'Watch' },
     ],
   },
+  history: {
+    title: 'Apollo 11: A Giant Leap',
+    period: 'July 20, 1969',
+    category: 'History of the Day',
+    body: 'Apollo 11 made history when astronauts Neil Armstrong and Buzz Aldrin landed on the Moon while Michael Collins orbited above. The mission showed that massive scientific projects become possible when research, engineering, and disciplined teamwork align. Its influence extended far beyond spaceflight, accelerating advances in computing, communications, and materials used in daily life. The mission still inspires today\'s student projects and modern lunar programs.',
+    source: 'NASA Apollo Archive',
+  },
+  law: {
+    article: 'Article 14',
+    title: 'Equality before law',
+    whatItMeans: 'Everyone receives equal protection of the laws and is treated fairly under the same legal framework.',
+    whyItMatters: 'It protects students and citizens from unfair or arbitrary treatment.',
+    example: 'If two students face the same rule violation, both should be evaluated by the same process.',
+    qualification: 'Reasonable classification is allowed when there is a legitimate objective.',
+    source: 'Constitution of India, Article 14',
+  },
   opportunities: [
     { title: 'ISRO Student Research Program', type: 'Internship', deadline: 'Aug 20' },
     { title: 'National Hackathon 2026', type: 'Competition', deadline: 'Aug 14' },
     { title: 'Young India Policy Fellowship', type: 'Fellowship', deadline: 'Aug 28' },
   ],
-  history: {
-    title: 'Why Apollo 11 mattered',
-    period: '1969',
-    category: 'Space history',
-    body: 'Apollo 11 marked the first human landing on the Moon in July 1969. The mission was the result of intense Cold War competition, rapid engineering progress, and coordinated global scientific effort. It transformed space exploration from a dream into a repeatable human achievement. The landing also accelerated advances in electronics, materials, and systems engineering that later influenced everyday technology. Its legacy is still visible in modern lunar missions and long-term plans for deeper space exploration.',
-    source: 'NASA Apollo 11 Mission Archive',
-  },
-  law: {
-    article: 'Article 14',
-    title: 'Equality before law',
-    whatItMeans: 'Every person is treated equally in front of the law and receives equal legal protection.',
-    whyItMatters: 'It protects students and citizens from arbitrary treatment by authorities and institutions.',
-    example: 'Two students facing the same disciplinary rule should be evaluated by the same standard.',
-    qualification: 'Reasonable classification is allowed when it has a clear and fair objective.',
-    source: 'Constitution of India, Article 14',
-  },
   news: [
     {
       category: 'AI & Technology',
-      headline: 'Open-source models improve on-device learning tools for students',
+      headline: 'Open-source learning models improve student productivity tools',
       source: 'MIT Technology Review',
       date: 'Today',
-      summary: 'New lightweight model releases are making educational assistants run faster on low-end hardware.',
-      whyItMatters: 'This can make quality study tools cheaper and more accessible for students.',
-      url: '#',
-    },
-    {
-      category: 'Aerospace & Space',
-      headline: 'New lunar mission planning calls for more student-built experiments',
-      source: 'European Space Agency',
-      date: 'Today',
-      summary: 'The upcoming mission framework expands opportunities for universities to submit payload ideas.',
-      whyItMatters: 'Students can access real mission pipelines earlier through university programs.',
-      url: '#',
-    },
-    {
-      category: 'Government & Civics',
-      headline: 'Education policy update proposes stronger digital skills benchmarks',
-      source: 'Press Information Bureau',
-      date: 'Today',
-      summary: 'Draft guidance recommends stronger AI, coding, and digital literacy outcomes in higher education.',
-      whyItMatters: 'Curriculum priorities can affect placement readiness and competitive exams.',
+      summary: 'Smaller models are making personalized learning assistants faster and more affordable.',
+      whyItMatters: 'Students can use practical AI tools even on low-end devices.',
       url: '#',
     },
   ],
+  rewards: [
+    { name: 'Explorer Hoodie', cost: 3000, type: 'Outfit' },
+    { name: 'City Sunset Background', cost: 2200, type: 'Background' },
+    { name: 'Trailblazer Backpack', cost: 2600, type: 'Accessory' },
+    { name: 'Aero Glasses', cost: 1800, type: 'Accessory' },
+  ],
+  quests: [
+    { id: 'attendance', status: 'completed' },
+    { id: 'history', status: 'active' },
+    { id: 'law', status: 'completed' },
+    { id: 'opportunities', status: 'completed' },
+    { id: 'dailyBrief', status: 'completed' },
+    { id: 'surprise', status: 'locked' },
+  ],
 }
 
-const NAV_ITEMS = ['Home', 'Attendance', 'Learn', 'Opportunities', 'More']
-const LEARN_ITEMS = ['History', 'Law']
-const MORE_ITEMS = ['Suggestions', 'About', 'Report a Bug', 'Contact', 'Privacy', 'Version']
-
-function getStatusClass(status) {
-  const lower = status.toLowerCase()
-  if (lower.includes('healthy')) return 'status healthy'
-  if (lower.includes('watch')) return 'status watch'
-  return 'status at-risk'
+function levelProgress() {
+  const earned = Math.max(0, state.user.xp)
+  return Math.min(100, (earned / state.user.levelCap) * 100)
 }
 
-function attendancePercent(subject) {
-  return ((subject.present / subject.total) * 100).toFixed(1)
+function remainingXp() {
+  return Math.max(0, state.user.levelCap - state.user.xp)
 }
 
-function renderHome() {
-  const journeyCards = [
-    {
-      key: 'Attendance',
-      description: 'Know where you stand.',
-      metric: `${state.attendance.overall}%`,
-      meta: state.attendance.warning,
-      accent: 'attendance',
-    },
-    {
-      key: 'History',
-      description: 'One thing worth knowing today.',
-      metric: state.history.title,
-      meta: '2 min read',
-      accent: 'history',
-    },
-    {
-      key: 'Law',
-      description: 'One legal concept to understand today.',
-      metric: `${state.law.article} — ${state.law.title}`,
-      meta: '2 min read',
-      accent: 'law',
-    },
-    {
-      key: 'Opportunities',
-      description: 'Discover things you could otherwise miss.',
-      metric: `${state.opportunities.length} matches`,
-      meta: `See what's available`,
-      accent: 'opportunities',
-    },
-  ]
+function completedQuestsCount() {
+  return state.quests.filter((quest) => quest.status === 'completed').length
+}
 
+function questById(id) {
+  return state.quests.find((quest) => quest.id === id)
+}
+
+function questClass(status) {
+  if (status === 'completed') return 'completed'
+  if (status === 'active') return 'active'
+  if (status === 'locked') return 'locked'
+  return 'pending'
+}
+
+function markQuestCompleted(id) {
+  const quest = questById(id)
+  const meta = QUEST_META[id]
+
+  if (!quest || !meta || quest.status === 'completed' || quest.status === 'locked') return
+
+  quest.status = 'completed'
+  state.user.xp += meta.reward
+  state.user.dailyXp += meta.reward
+  state.user.weeklyXp += meta.reward
+  state.user.monthlyXp += meta.reward
+  state.xpToast = `+${meta.reward} XP`
+
+  while (state.user.xp >= state.user.levelCap) {
+    state.user.level += 1
+    state.user.levelCap += 1000
+  }
+
+  render()
+
+  setTimeout(() => {
+    state.xpToast = ''
+    render()
+  }, 1200)
+}
+
+function openQuest(id) {
+  const quest = questById(id)
+  if (!quest || quest.status === 'locked') return
+  state.activeQuestId = id
+  state.activeTab = 'HOME'
+  render()
+}
+
+function renderTopHeader() {
   return `
-    <header class="page-head">
-      <div>
-        <h1>Good morning, ${state.greetingName} 👋</h1>
-        <p>Here's what matters today.</p>
-      </div>
-      <div class="top-controls">
-        <button class="ghost">🔔</button>
-        <button class="ghost">Profile</button>
+    <header class="top-header card">
+      <button class="icon-btn" aria-label="Menu">☰</button>
+      <h1 class="wordmark">COOKED?</h1>
+      <div class="header-right">
+        <button class="icon-btn bell" aria-label="Notifications">🔔<span>2</span></button>
+        <button class="avatar-btn" aria-label="Profile">🧑🏽</button>
       </div>
     </header>
+  `
+}
 
-    <section class="section">
-      <div class="section-head">
-        <h2>Today's Journey</h2>
-        <p>Your most useful things for today.</p>
+function renderGreeting() {
+  return `
+    <section class="greeting card">
+      <div>
+        <p class="muted">Good morning,</p>
+        <h2>${state.user.name} 👋</h2>
+        <p>Let's make today count.</p>
       </div>
-      <div class="journey-grid">
-        ${journeyCards
-          .map(
-            (card) => `
-              <button class="journey-card ${card.accent}" data-view="${card.key}">
-                <div class="pill">${card.key}</div>
-                <h3>${card.key}</h3>
-                <p>${card.description}</p>
-                <strong>${card.metric}</strong>
-                <span>${card.meta}</span>
-              </button>
-            `,
-          )
-          .join('')}
+      <div class="character-wrap" aria-label="Student character">
+        <div class="sun"></div>
+        <div class="character">🧑🏽‍🎓</div>
       </div>
     </section>
+  `
+}
 
-    <section class="section">
-      <div class="section-head">
-        <h2>Your Daily Brief</h2>
-        <p>News selected for your interests.</p>
+function renderLevelCard() {
+  return `
+    <section class="xp-card card">
+      <div class="level-badge">${state.user.level}</div>
+      <div class="xp-main">
+        <p class="label">LEVEL ${state.user.level}</p>
+        <strong>${state.user.xp.toLocaleString()} / ${state.user.levelCap.toLocaleString()} XP</strong>
+        <div class="xp-progress"><span style="width:${levelProgress()}%"></span></div>
       </div>
-      <div class="news-grid">
-        ${state.news
-          .slice(0, 6)
-          .map(
-            (item) => `
-              <article class="news-card">
-                <span class="news-tag">${item.category}</span>
-                <h3>${item.headline}</h3>
-                <p class="meta">${item.source} • ${item.date}</p>
-                <p>${item.summary}</p>
-                <p><strong>Why it matters:</strong> ${item.whyItMatters}</p>
-                <a href="${item.url}" target="_blank" rel="noreferrer">Read source</a>
-              </article>
-            `,
-          )
-          .join('')}
+      <div class="xp-next">
+        <p>${remainingXp().toLocaleString()} XP to next level</p>
+        <span>›</span>
       </div>
     </section>
+  `
+}
 
-    <section class="section compact">
-      <div class="section-head">
-        <h2>Opportunities highlight</h2>
+function renderJourneyCard() {
+  return `
+    <section class="journey card">
+      <div class="journey-head">
+        <h3>Today's Journey</h3>
+        <p>${completedQuestsCount()} / ${state.quests.length} Completed</p>
       </div>
-      <div class="opportunity-strip">
-        ${state.opportunities
-          .map(
-            (item) => `
-              <article>
-                <h3>${item.title}</h3>
-                <p>${item.type} • Deadline ${item.deadline}</p>
-              </article>
-            `,
-          )
+      <div class="quest-path">
+        ${state.quests
+          .map((quest, index) => {
+            const meta = QUEST_META[quest.id]
+            return `
+              <div class="quest-node ${questClass(quest.status)}" data-quest="${quest.id}">
+                <button class="quest-hit" ${quest.status === 'locked' ? 'disabled' : ''}>
+                  <span class="quest-icon">${quest.status === 'completed' ? '✓' : meta.icon}</span>
+                  <span class="quest-name">${meta.title}</span>
+                  <span class="quest-xp">${quest.status === 'completed' ? `+${meta.reward} XP earned` : `+${meta.reward} XP`}</span>
+                </button>
+                ${index < state.quests.length - 1 ? '<div class="path-line"></div>' : ''}
+              </div>
+            `
+          })
           .join('')}
       </div>
     </section>
   `
 }
 
-function renderAttendance() {
+function renderStreakAndXp() {
+  const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
   return `
-    <header class="page-head simple">
-      <div>
-        <h1>Attendance</h1>
-        <p>Know where you stand before it becomes a problem.</p>
-      </div>
-    </header>
-
-    <section class="summary-card">
-      <div>
-        <p class="meta">Overall attendance</p>
-        <h2>${state.attendance.overall}%</h2>
-      </div>
-      <div>
-        <span class="${getStatusClass(state.attendance.status)}">${state.attendance.status}</span>
-        <div class="progress"><span style="width:${state.attendance.overall}%"></span></div>
-      </div>
-    </section>
-
-    <section class="section compact">
-      <div class="section-head"><h2>Subjects</h2></div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Subject</th><th>Present / Total</th><th>Percentage</th><th>Status</th></tr>
-          </thead>
-          <tbody>
-            ${state.attendance.subjects
-              .map(
-                (s) => `
-                  <tr>
-                    <td>${s.name}</td>
-                    <td>${s.present} / ${s.total}</td>
-                    <td>${attendancePercent(s)}%</td>
-                    <td><span class="${getStatusClass(s.status)}">${s.status}</span></td>
-                  </tr>
-                `,
-              )
-              .join('')}
-          </tbody>
-        </table>
-      </div>
+    <section class="stats-grid">
+      <article class="card streak-card">
+        <h3>🔥 ${state.user.streak} Day Streak</h3>
+        <p>Keep it going!</p>
+        <div class="streak-days">
+          ${days
+            .map((day, i) => `<span class="${i < 6 ? 'done' : ''}">${day}</span>`)
+            .join('')}
+        </div>
+      </article>
+      <article class="card total-xp-card">
+        <h3>Total XP</h3>
+        <strong>${(state.user.xp / 1000).toFixed(1)}K</strong>
+        <p>+${state.user.dailyXp} XP today</p>
+        <div class="trend" aria-hidden="true"></div>
+      </article>
     </section>
   `
 }
 
-function renderLearn() {
-  if (state.activeLearn === 'Law') {
-    return `
-      <header class="page-head simple"><div><h1>LAW OF THE DAY</h1></div></header>
-      <section class="article-card">
-        <p class="meta">${state.law.article}</p>
-        <h2>${state.law.title}</h2>
-        <h3>What it means</h3><p>${state.law.whatItMeans}</p>
-        <h3>Why it matters</h3><p>${state.law.whyItMatters}</p>
-        <h3>Real-life example</h3><p>${state.law.example}</p>
-        <h3>Important qualification</h3><p>${state.law.qualification}</p>
-        <h3>Source</h3><p>${state.law.source}</p>
-        <p class="disclaimer">Educational content only. This is not legal advice.</p>
-      </section>
+function renderWhatsNew() {
+  const feature = state.history
+  return `
+    <section class="section-title-row">
+      <h3>What's New</h3>
+      <button class="link-btn">View All ></button>
+    </section>
+    <article class="card featured">
+      <div class="featured-media">🚀</div>
+      <div class="featured-body">
+        <p class="tag">${feature.category}</p>
+        <h3>${feature.title}</h3>
+        <p>On July 20, 1969, humanity took its first steps on the Moon.</p>
+        <button class="icon-btn bookmark" aria-label="Bookmark">🔖</button>
+      </div>
+    </article>
+  `
+}
+
+function renderQuestDetail() {
+  const id = state.activeQuestId
+  const meta = QUEST_META[id]
+  const quest = questById(id)
+  if (!id || !meta || !quest) return ''
+
+  let content = ''
+
+  if (id === 'attendance') {
+    content = `
+      <p>Track today\'s classes and update present/absent status to keep your risk under control.</p>
+      <p class="detail-meta">Overall attendance: ${state.attendance.overall}% • ${state.attendance.warning}</p>
+    `
+  }
+
+  if (id === 'history') {
+    content = `
+      <p>${state.history.body}</p>
+      <p class="detail-meta">Source: ${state.history.source}</p>
+    `
+  }
+
+  if (id === 'law') {
+    content = `
+      <p><strong>${state.law.article}:</strong> ${state.law.title}</p>
+      <p>${state.law.whatItMeans}</p>
+      <p class="detail-meta">Educational content only.</p>
+    `
+  }
+
+  if (id === 'opportunities') {
+    content = `<ul>${state.opportunities
+      .map((item) => `<li>${item.title} • Deadline ${item.deadline}</li>`)
+      .join('')}</ul>`
+  }
+
+  if (id === 'dailyBrief') {
+    const story = state.news[0]
+    content = `
+      <p><strong>${story.headline}</strong></p>
+      <p>${story.summary}</p>
+      <p class="detail-meta">${story.source} • ${story.date}</p>
     `
   }
 
   return `
-    <header class="page-head simple"><div><h1>HISTORY OF THE DAY</h1></div></header>
-    <section class="article-card">
-      <p class="meta">${state.history.period} • ${state.history.category}</p>
-      <h2>${state.history.title}</h2>
-      <p>${state.history.body}</p>
-      <div class="quiz-block">
-        <h3>Quick check</h3>
-        <p>Which statement best explains why Apollo 11 mattered long-term?</p>
-        <ol>
-          <li>It created immediate tourism on the Moon</li>
-          <li>It proved complex global-scale engineering goals were achievable</li>
-          <li>It ended all Cold War conflicts</li>
-          <li>It replaced satellite technology</li>
-        </ol>
-      </div>
-      <p><strong>Source:</strong> ${state.history.source}</p>
+    <section class="card detail-card">
+      <button class="link-btn" data-back-home>← Back to Home</button>
+      <h3>${meta.icon} ${meta.title}</h3>
+      ${content}
+      <button class="primary-btn" data-complete-quest="${id}" ${quest.status === 'completed' ? 'disabled' : ''}>
+        ${quest.status === 'completed' ? '✓ Completed' : `Complete quest +${meta.reward} XP`}
+      </button>
     </section>
   `
 }
 
-function renderOpportunities() {
+function renderHomeTab() {
+  if (state.activeQuestId) return `${renderTopHeader()}${renderQuestDetail()}`
+
   return `
-    <header class="page-head simple">
-      <div><h1>Opportunities</h1><p>Discover things you could otherwise miss.</p></div>
-    </header>
-    <section class="news-grid">
-      ${state.opportunities
-        .map(
-          (item) => `
-            <article class="news-card">
-              <span class="news-tag">${item.type}</span>
-              <h3>${item.title}</h3>
-              <p class="meta">Deadline: ${item.deadline}</p>
-              <p>Track this opportunity and apply on time.</p>
-            </article>
-          `,
-        )
-        .join('')}
+    ${renderTopHeader()}
+    ${renderGreeting()}
+    ${renderLevelCard()}
+    ${renderJourneyCard()}
+    ${renderStreakAndXp()}
+    ${renderWhatsNew()}
+  `
+}
+
+function renderQuestsTab() {
+  return `
+    <section class="panel">
+      <h2>Today's Quests</h2>
+      <p class="muted">Complete meaningful actions to earn XP.</p>
+      <div class="quest-list">
+        ${state.quests
+          .filter((quest) => quest.status !== 'locked')
+          .map((quest) => {
+            const meta = QUEST_META[quest.id]
+            return `
+              <article class="card quest-item ${questClass(quest.status)}">
+                <div>
+                  <h3>${meta.icon} ${meta.title}</h3>
+                  <p>${meta.title === 'History' ? 'Learn today\'s historical event.' : 'Complete today\'s activity to make progress.'}</p>
+                  <p class="detail-meta">+${meta.reward} XP</p>
+                </div>
+                <div class="quest-actions">
+                  <button class="link-btn" data-open-quest="${quest.id}">Start Quest</button>
+                  <button class="primary-btn" data-complete-quest="${quest.id}" ${quest.status === 'completed' ? 'disabled' : ''}>
+                    ${quest.status === 'completed' ? '✓ Completed' : 'Mark Completed'}
+                  </button>
+                </div>
+              </article>
+            `
+          })
+          .join('')}
+      </div>
     </section>
   `
 }
 
-function renderMore() {
-  const map = {
-    Suggestions: `
-      <section class="article-card">
-        <h2>Suggestions</h2>
-        <p>Share feedback to help improve COOKED?.</p>
-        <button id="sendSuggestion" class="primary">Send sample suggestion</button>
-      </section>
-    `,
-    About: `
-      <section class="article-card">
-        <h2>About COOKED?</h2>
-        <p>COOKED? helps students know what matters before it's too late.</p>
-      </section>
-    `,
-    'Report a Bug': `
-      <section class="article-card">
-        <h2>Report a Bug</h2>
-        <p>Found an issue? Send it to support with one tap.</p>
-      </section>
-    `,
-    Contact: `
-      <section class="article-card">
-        <h2>Contact</h2>
-        <p>Reach support for account and product help.</p>
-        <button id="sendSupport" class="primary">Send sample support request</button>
-      </section>
-    `,
-    Privacy: `
-      <section class="article-card">
-        <h2>Privacy</h2>
-        <p>Sources are attributed, and student trust comes first.</p>
-      </section>
-    `,
-    Version: `
-      <section class="article-card">
-        <h2>Version</h2>
-        <p>COOKED? V1</p>
-      </section>
-    `,
-  }
-
-  return `<header class="page-head simple"><div><h1>More</h1></div></header>${map[state.activeMore]}`
+function renderProgressTab() {
+  return `
+    <section class="panel">
+      <h2>Progress</h2>
+      <div class="progress-cards">
+        <article class="card metric"><p>Current Level</p><strong>${state.user.level}</strong></article>
+        <article class="card metric"><p>XP</p><strong>${state.user.xp.toLocaleString()}</strong></article>
+        <article class="card metric"><p>XP to Next Level</p><strong>${remainingXp().toLocaleString()}</strong></article>
+        <article class="card metric"><p>XP this Week</p><strong>${state.user.weeklyXp}</strong></article>
+        <article class="card metric"><p>XP this Month</p><strong>${state.user.monthlyXp}</strong></article>
+        <article class="card metric"><p>Current Streak</p><strong>${state.user.streak} days</strong></article>
+        <article class="card metric"><p>Longest Streak</p><strong>${state.user.longestStreak} days</strong></article>
+        <article class="card metric"><p>Quests Completed</p><strong>${completedQuestsCount()}</strong></article>
+      </div>
+      <article class="card achievement-block">
+        <h3>Achievements</h3>
+        <ul>${state.user.achievements.map((item) => `<li>${item}</li>`).join('')}</ul>
+      </article>
+    </section>
+  `
 }
 
-function renderContent() {
-  if (state.activeView === 'Home') return renderHome()
-  if (state.activeView === 'Attendance') return renderAttendance()
-  if (state.activeView === 'Learn') return renderLearn()
-  if (state.activeView === 'Opportunities') return renderOpportunities()
-  return renderMore()
+function renderRewardsTab() {
+  return `
+    <section class="panel">
+      <h2>Rewards</h2>
+      <p class="muted">Cosmetics only. XP cannot be purchased.</p>
+      <div class="rewards-grid">
+        ${state.rewards
+          .map(
+            (item) => `
+              <article class="card reward-item">
+                <p class="tag">${item.type}</p>
+                <h3>${item.name}</h3>
+                <p>${item.cost.toLocaleString()} XP</p>
+                <button class="primary-btn" ${state.user.xp < item.cost ? 'disabled' : ''}>
+                  ${state.user.xp >= item.cost ? 'Unlock' : 'Keep Progressing'}
+                </button>
+              </article>
+            `,
+          )
+          .join('')}
+      </div>
+    </section>
+  `
+}
+
+function renderProfileTab() {
+  return `
+    <section class="panel">
+      <article class="card profile-card">
+        <div class="profile-hero">🧑🏽‍🎓</div>
+        <div>
+          <h2>${state.user.name}</h2>
+          <p class="muted">Level ${state.user.level} • ${state.user.xp.toLocaleString()} XP</p>
+          <p class="muted">Streak: ${state.user.streak} days • Quests: ${completedQuestsCount()}</p>
+        </div>
+        <button class="primary-btn">Customize Character</button>
+      </article>
+      <article class="card profile-achievements">
+        <h3>Achievements</h3>
+        <ul>${state.user.achievements.map((item) => `<li>${item}</li>`).join('')}</ul>
+      </article>
+      <button id="sendSuggestion" class="link-btn">Send a suggestion</button>
+    </section>
+  `
+}
+
+function renderActiveTab() {
+  if (state.activeTab === 'HOME') return renderHomeTab()
+  if (state.activeTab === 'QUESTS') return renderQuestsTab()
+  if (state.activeTab === 'PROGRESS') return renderProgressTab()
+  if (state.activeTab === 'REWARDS') return renderRewardsTab()
+  return renderProfileTab()
+}
+
+function tabIcon(tab) {
+  if (tab === 'HOME') return '🏠'
+  if (tab === 'QUESTS') return '🏁'
+  if (tab === 'PROGRESS') return '📊'
+  if (tab === 'REWARDS') return '🎁'
+  return '👤'
+}
+
+function renderBottomNav() {
+  return `
+    <nav class="bottom-nav card">
+      ${TABS.map(
+        (tab) => `
+          <button class="tab-btn ${state.activeTab === tab ? 'active' : ''}" data-tab="${tab}">
+            <span>${tabIcon(tab)}</span>
+            <small>${tab}</small>
+          </button>
+        `,
+      ).join('')}
+    </nav>
+  `
 }
 
 function render() {
   app.innerHTML = `
-    <div class="layout">
-      <aside class="sidebar">
-        <div class="brand">
-          <h2>COOKED?</h2>
-          <p>Your daily student companion.</p>
-        </div>
-
-        <nav class="main-nav">
-          ${NAV_ITEMS.map(
-            (item) => `<button class="nav-btn ${state.activeView === item ? 'active' : ''}" data-nav="${item}">${item}</button>`,
-          ).join('')}
-        </nav>
-
-        ${
-          state.activeView === 'Learn'
-            ? `<div class="sub-nav">${LEARN_ITEMS.map(
-                (item) => `<button class="sub-btn ${state.activeLearn === item ? 'active' : ''}" data-learn="${item}">${item}</button>`,
-              ).join('')}</div>`
-            : ''
-        }
-
-        ${
-          state.activeView === 'More'
-            ? `<div class="sub-nav">${MORE_ITEMS.map(
-                (item) => `<button class="sub-btn ${state.activeMore === item ? 'active' : ''}" data-more="${item}">${item}</button>`,
-              ).join('')}</div>`
-            : ''
-        }
-
-        <footer class="profile-block">
-          <div class="avatar">S</div>
-          <div>
-            <strong>${state.greetingName}</strong>
-            <p>Student</p>
-          </div>
-        </footer>
-      </aside>
-
-      <main class="content">${renderContent()}</main>
+    <div class="app-shell">
+      <main class="mobile-surface">${renderActiveTab()}</main>
+      ${renderBottomNav()}
+      ${state.xpToast ? `<div class="xp-toast">${state.xpToast}</div>` : ''}
     </div>
   `
 
@@ -409,58 +481,42 @@ function render() {
 }
 
 function bindEvents() {
-  document.querySelectorAll('[data-nav]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.activeView = btn.dataset.nav
+  document.querySelectorAll('[data-tab]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.activeTab = button.dataset.tab
+      if (state.activeTab !== 'HOME') state.activeQuestId = null
       render()
     })
   })
 
-  document.querySelectorAll('[data-learn]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.activeLearn = btn.dataset.learn
-      render()
-    })
+  document.querySelectorAll('[data-quest]').forEach((node) => {
+    node.addEventListener('click', () => openQuest(node.dataset.quest))
   })
 
-  document.querySelectorAll('[data-more]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.activeMore = btn.dataset.more
-      render()
-    })
+  document.querySelectorAll('[data-open-quest]').forEach((button) => {
+    button.addEventListener('click', () => openQuest(button.dataset.openQuest))
   })
 
-  document.querySelectorAll('[data-view]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.activeView = btn.dataset.view
-      if (btn.dataset.view === 'History' || btn.dataset.view === 'Law') {
-        state.activeView = 'Learn'
-        state.activeLearn = btn.dataset.view
-      }
+  document.querySelectorAll('[data-complete-quest]').forEach((button) => {
+    button.addEventListener('click', () => markQuestCompleted(button.dataset.completeQuest))
+  })
+
+  const backButton = document.querySelector('[data-back-home]')
+  if (backButton) {
+    backButton.addEventListener('click', () => {
+      state.activeQuestId = null
       render()
     })
-  })
+  }
 
   const suggestionButton = document.querySelector('#sendSuggestion')
   if (suggestionButton) {
     suggestionButton.addEventListener('click', async () => {
       try {
-        await submitSuggestion({ message: 'Loving the clean daily briefing!' })
+        await submitSuggestion({ message: 'Loving the gamified journey flow!' })
         alert('Suggestion sent.')
       } catch {
         alert('Configure src/api/feedbackApi.js with your endpoint first.')
-      }
-    })
-  }
-
-  const supportButton = document.querySelector('#sendSupport')
-  if (supportButton) {
-    supportButton.addEventListener('click', async () => {
-      try {
-        await submitSupportRequest({ message: 'Sample bug/support request.' })
-        alert('Support request sent.')
-      } catch {
-        alert('Configure src/api/supportApi.js with your endpoint first.')
       }
     })
   }
@@ -475,11 +531,13 @@ async function hydrateFromApis() {
     fetchOpportunities(),
   ])
 
-  if (attendance.status === 'fulfilled') state.attendance = attendance.value
-  if (news.status === 'fulfilled') state.news = news.value
-  if (history.status === 'fulfilled') state.history = history.value
-  if (law.status === 'fulfilled') state.law = law.value
-  if (opportunities.status === 'fulfilled') state.opportunities = opportunities.value
+  if (attendance.status === 'fulfilled' && attendance.value?.overall) state.attendance = attendance.value
+  if (news.status === 'fulfilled' && Array.isArray(news.value) && news.value.length) state.news = news.value
+  if (history.status === 'fulfilled' && history.value?.title) state.history = history.value
+  if (law.status === 'fulfilled' && law.value?.title) state.law = law.value
+  if (opportunities.status === 'fulfilled' && Array.isArray(opportunities.value) && opportunities.value.length) {
+    state.opportunities = opportunities.value
+  }
 }
 
 await hydrateFromApis()
