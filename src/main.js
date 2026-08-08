@@ -91,6 +91,13 @@ const state = {
     { id: 'dailyBrief', status: 'completed' },
     { id: 'surprise', status: 'locked' },
   ],
+  dailyChallenge: {
+    title: 'Daily Sprint',
+    task: 'Complete any 2 quests today',
+    reward: 80,
+    goal: 2,
+    claimed: false,
+  },
 }
 
 function levelProgress() {
@@ -108,6 +115,17 @@ function completedQuestsCount() {
 
 function questById(id) {
   return state.quests.find((quest) => quest.id === id)
+}
+
+function completedUnlockedQuestsCount() {
+  return state.quests.filter((quest) => quest.status === 'completed').length
+}
+
+function currentRank() {
+  if (state.user.level >= 15) return 'Master'
+  if (state.user.level >= 10) return 'Champion'
+  if (state.user.level >= 5) return 'Rising'
+  return 'Starter'
 }
 
 function questClass(status) {
@@ -129,6 +147,30 @@ function markQuestCompleted(id) {
   state.user.weeklyXp += meta.reward
   state.user.monthlyXp += meta.reward
   state.xpToast = `+${meta.reward} XP`
+
+  while (state.user.xp >= state.user.levelCap) {
+    state.user.level += 1
+    state.user.levelCap += 1000
+  }
+
+  render()
+
+  setTimeout(() => {
+    state.xpToast = ''
+    render()
+  }, 1200)
+}
+
+function claimDailyChallenge() {
+  const completed = completedUnlockedQuestsCount()
+  if (state.dailyChallenge.claimed || completed < state.dailyChallenge.goal) return
+
+  state.dailyChallenge.claimed = true
+  state.user.xp += state.dailyChallenge.reward
+  state.user.dailyXp += state.dailyChallenge.reward
+  state.user.weeklyXp += state.dailyChallenge.reward
+  state.user.monthlyXp += state.dailyChallenge.reward
+  state.xpToast = `+${state.dailyChallenge.reward} XP Daily Bonus`
 
   while (state.user.xp >= state.user.levelCap) {
     state.user.level += 1
@@ -171,6 +213,7 @@ function renderGreeting() {
         <p class="muted">Good morning,</p>
         <h2>${state.user.name} 👋</h2>
         <p>Let's make today count.</p>
+        <p class="rank-pill">Rank: ${currentRank()}</p>
       </div>
       <div class="character-wrap" aria-label="Student character">
         <div class="sun"></div>
@@ -324,6 +367,32 @@ function renderQuestDetail() {
   `
 }
 
+function renderMomentumCard() {
+  const completed = completedUnlockedQuestsCount()
+  const percent = Math.min(100, (completed / state.dailyChallenge.goal) * 100)
+  const ready = completed >= state.dailyChallenge.goal
+
+  return `
+    <section class="card momentum-card">
+      <div class="momentum-head">
+        <h3>⚡ ${state.dailyChallenge.title}</h3>
+        <p>${completed} / ${state.dailyChallenge.goal} quests</p>
+      </div>
+      <p>${state.dailyChallenge.task}</p>
+      <div class="challenge-progress"><span style="width:${percent}%"></span></div>
+      <button class="primary-btn challenge-claim" data-claim-daily ${!ready || state.dailyChallenge.claimed ? 'disabled' : ''}>
+        ${
+          state.dailyChallenge.claimed
+            ? '✓ Claimed'
+            : ready
+              ? `Claim +${state.dailyChallenge.reward} XP`
+              : `${state.dailyChallenge.goal - completed} more to unlock`
+        }
+      </button>
+    </section>
+  `
+}
+
 function renderHomeTab() {
   if (state.activeQuestId) return `${renderTopHeader()}${renderQuestDetail()}`
 
@@ -331,6 +400,7 @@ function renderHomeTab() {
     ${renderTopHeader()}
     ${renderGreeting()}
     ${renderLevelCard()}
+    ${renderMomentumCard()}
     ${renderJourneyCard()}
     ${renderStreakAndXp()}
     ${renderWhatsNew()}
@@ -500,6 +570,11 @@ function bindEvents() {
   document.querySelectorAll('[data-complete-quest]').forEach((button) => {
     button.addEventListener('click', () => markQuestCompleted(button.dataset.completeQuest))
   })
+
+  const claimButton = document.querySelector('[data-claim-daily]')
+  if (claimButton) {
+    claimButton.addEventListener('click', claimDailyChallenge)
+  }
 
   const backButton = document.querySelector('[data-back-home]')
   if (backButton) {
