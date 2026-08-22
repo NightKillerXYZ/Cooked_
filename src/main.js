@@ -1,3 +1,6 @@
+import 'bootstrap/dist/css/bootstrap.min.css'
+import './bootstrap-studio.css'
+import './bootstrap-studio.js'
 import './style.css'
 import { fetchAttendanceOverview } from './api/attendanceApi'
 import { fetchDailyNews } from './api/newsApi'
@@ -8,7 +11,7 @@ import { submitSuggestion } from './api/feedbackApi'
 
 const app = document.querySelector('#app')
 
-const TABS = ['HOME', 'QUESTS', 'PROGRESS', 'REWARDS', 'PROFILE']
+const TABS = ['HOME', 'HISTORY', 'NEW_TODAY', 'KNOW_THE_CON', 'MORE']
 
 const QUEST_META = {
   attendance: { title: 'Attendance', icon: '🗓️', reward: 10 },
@@ -35,14 +38,25 @@ const state = {
   activeTab: 'HOME',
   activeQuestId: null,
   xpToast: '',
+  mobileMenuOpen: false,
   attendance: {
-    overall: 86,
-    status: 'Healthy',
-    warning: '1 subject needs attention',
-    subjects: [
-      { name: 'Physics', present: 38, total: 44, status: 'Healthy' },
-      { name: 'Mathematics', present: 27, total: 38, status: 'At Risk' },
-      { name: 'Computer Science', present: 29, total: 34, status: 'Watch' },
+    schoolName: 'School Attendance',
+    mode: 'calendar',
+    selectedDate: '2026-08-13',
+    anonymous: {
+      presentDays: 72,
+      totalDays: 96,
+      targetPercent: 75,
+    },
+    records: [
+      { date: '2026-08-01', status: 'present' },
+      { date: '2026-08-02', status: 'present' },
+      { date: '2026-08-03', status: 'absent' },
+      { date: '2026-08-04', status: 'present' },
+      { date: '2026-08-05', status: 'present' },
+      { date: '2026-08-08', status: 'present' },
+      { date: '2026-08-09', status: 'absent' },
+      { date: '2026-08-10', status: 'present' },
     ],
   },
   history: {
@@ -98,6 +112,37 @@ const state = {
     goal: 2,
     claimed: false,
   },
+}
+
+function todayInfo() {
+  const now = new Date()
+  return {
+    day: now.getDate(),
+    month: now.toLocaleString(undefined, { month: 'long' }),
+    year: now.getFullYear(),
+    weekday: now.toLocaleString(undefined, { weekday: 'long' }),
+  }
+}
+
+function attendanceRecords() {
+  const today = todayInfo()
+  const records = state.attendance.records.filter((record) => record.day !== today.day)
+  if (state.attendance.todayStatus) {
+    records.push({ day: today.day, status: state.attendance.todayStatus })
+  }
+  return records
+}
+
+function attendanceOverall() {
+  const records = attendanceRecords()
+  if (!records.length) return 0
+  const present = records.filter((record) => record.status === 'present').length
+  return Math.round((present / records.length) * 100)
+}
+
+function markTodayAttendance(status) {
+  state.attendance.todayStatus = status
+  render()
 }
 
 function levelProgress() {
@@ -195,29 +240,55 @@ function openQuest(id) {
 
 function renderTopHeader() {
   return `
-    <header class="top-header card">
-      <button class="icon-btn" aria-label="Menu">☰</button>
-      <h1 class="wordmark">COOKED?</h1>
-      <div class="header-right">
-        <button class="icon-btn bell" aria-label="Notifications">🔔<span>2</span></button>
-        <button class="avatar-btn" aria-label="Profile">🧑🏽</button>
+    <header class="app-header d-flex align-items-center justify-content-between">
+      <div class="d-flex align-items-center gap-3">
+        <button class="icon-btn d-lg-none" aria-label="Menu" data-toggle-mobile-menu>☰</button>
+        <div class="app-brand">
+          <h1 class="wordmark m-0">COOKED?</h1>
+        </div>
+      </div>
+      
+      <nav class="app-nav d-none d-lg-flex align-items-center gap-4">
+        <button class="nav-link ${state.activeTab === 'HOME' ? 'active' : ''}" data-tab="HOME">Home</button>
+        <button class="nav-link ${state.activeTab === 'HISTORY' ? 'active' : ''}" data-tab="HISTORY">History</button>
+        <button class="nav-link ${state.activeTab === 'NEW_TODAY' ? 'active' : ''}" data-tab="NEW_TODAY">New Today</button>
+        <button class="nav-link ${state.activeTab === 'KNOW_THE_CON' ? 'active' : ''}" data-tab="KNOW_THE_CON">Know the Con</button>
+        <button class="nav-link ${state.activeTab === 'MORE' ? 'active' : ''}" data-tab="MORE">More</button>
+      </nav>
+      
+      <div class="app-actions d-flex align-items-center gap-2">
+        <button class="icon-btn bell position-relative" aria-label="Notifications">🔔<span class="position-absolute top-0 end-0">2</span></button>
+        <button class="avatar-btn rounded-circle" aria-label="Profile">🧑🏽</button>
       </div>
     </header>
+    
+    <!-- Mobile Navigation Menu -->
+    <nav class="mobile-nav d-lg-none ${state.mobileMenuOpen ? 'open' : ''}">
+      <button class="nav-link ${state.activeTab === 'HOME' ? 'active' : ''}" data-tab="HOME">Home</button>
+      <button class="nav-link ${state.activeTab === 'HISTORY' ? 'active' : ''}" data-tab="HISTORY">History</button>
+      <button class="nav-link ${state.activeTab === 'NEW_TODAY' ? 'active' : ''}" data-tab="NEW_TODAY">New Today</button>
+      <button class="nav-link ${state.activeTab === 'KNOW_THE_CON' ? 'active' : ''}" data-tab="KNOW_THE_CON">Know the Con</button>
+      <button class="nav-link ${state.activeTab === 'MORE' ? 'active' : ''}" data-tab="MORE">More</button>
+    </nav>
   `
 }
 
 function renderGreeting() {
   return `
-    <section class="greeting card">
-      <div>
-        <p class="muted">Good morning,</p>
-        <h2>${state.user.name} 👋</h2>
-        <p>Let's make today count.</p>
-        <p class="rank-pill">Rank: ${currentRank()}</p>
-      </div>
-      <div class="character-wrap" aria-label="Student character">
-        <div class="sun"></div>
-        <div class="character">🧑🏽‍🎓</div>
+    <section class="greeting card p-4">
+      <div class="row align-items-center">
+        <div class="col-12 col-lg-7">
+          <p class="muted mb-1">Good morning,</p>
+          <h2 class="mb-1">${state.user.name} 👋</h2>
+          <p class="mb-2">Let's make today count.</p>
+          <p class="rank-pill mb-0">Rank: ${currentRank()}</p>
+        </div>
+        <div class="col-12 col-lg-5 d-flex justify-content-lg-end justify-content-center mt-3 mt-lg-0">
+          <div class="character-wrap position-relative overflow-hidden" aria-label="Student character">
+            <div class="sun"></div>
+            <div class="character">🧑🏽‍🎓</div>
+          </div>
+        </div>
       </div>
     </section>
   `
@@ -225,15 +296,15 @@ function renderGreeting() {
 
 function renderLevelCard() {
   return `
-    <section class="xp-card card">
+    <section class="xp-card card p-3 d-flex align-items-center gap-3">
       <div class="level-badge">${state.user.level}</div>
-      <div class="xp-main">
-        <p class="label">LEVEL ${state.user.level}</p>
-        <strong>${state.user.xp.toLocaleString()} / ${state.user.levelCap.toLocaleString()} XP</strong>
-        <div class="xp-progress"><span style="width:${levelProgress()}%"></span></div>
+      <div class="xp-main flex-grow-1">
+        <p class="label mb-1">LEVEL ${state.user.level}</p>
+        <strong class="d-block">${state.user.xp.toLocaleString()} / ${state.user.levelCap.toLocaleString()} XP</strong>
+        <div class="xp-progress mt-2"><span style="width:${levelProgress()}%"></span></div>
       </div>
-      <div class="xp-next">
-        <p>${remainingXp().toLocaleString()} XP to next level</p>
+      <div class="xp-next text-end">
+        <p class="mb-1">${remainingXp().toLocaleString()} XP to next level</p>
         <span>›</span>
       </div>
     </section>
@@ -242,20 +313,20 @@ function renderLevelCard() {
 
 function renderJourneyCard() {
   return `
-    <section class="journey card">
-      <div class="journey-head">
-        <h3>Today's Journey</h3>
-        <p>${completedQuestsCount()} / ${state.quests.length} Completed</p>
+    <section class="journey card p-3">
+      <div class="journey-head d-flex justify-content-between align-items-center gap-2">
+        <h3 class="m-0">Today's Journey</h3>
+        <p class="m-0 text-muted">${completedQuestsCount()} / ${state.quests.length} Completed</p>
       </div>
-      <div class="quest-path">
+      <div class="quest-path mt-3">
         ${state.quests
           .map((quest, index) => {
             const meta = QUEST_META[quest.id]
             return `
-              <div class="quest-node ${questClass(quest.status)}" data-quest="${quest.id}">
-                <button class="quest-hit" ${quest.status === 'locked' ? 'disabled' : ''}>
+              <div class="quest-node ${questClass(quest.status)} position-relative pb-2" data-quest="${quest.id}">
+                <button class="quest-hit w-100 text-start" ${quest.status === 'locked' ? 'disabled' : ''}>
                   <span class="quest-icon">${quest.status === 'completed' ? '✓' : meta.icon}</span>
-                  <span class="quest-name">${meta.title}</span>
+                  <span class="quest-name fw-semibold">${meta.title}</span>
                   <span class="quest-xp">${quest.status === 'completed' ? `+${meta.reward} XP earned` : `+${meta.reward} XP`}</span>
                 </button>
                 ${index < state.quests.length - 1 ? '<div class="path-line"></div>' : ''}
@@ -272,20 +343,20 @@ function renderStreakAndXp() {
   const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
   return `
     <section class="stats-grid">
-      <article class="card streak-card">
-        <h3>🔥 ${state.user.streak} Day Streak</h3>
-        <p>Keep it going!</p>
-        <div class="streak-days">
+      <article class="card streak-card p-3">
+        <h3 class="fs-5">🔥 ${state.user.streak} Day Streak</h3>
+        <p class="text-muted mt-1">Keep it going!</p>
+        <div class="streak-days d-grid grid-cols-7 gap-1 mt-3">
           ${days
             .map((day, i) => `<span class="${i < 6 ? 'done' : ''}">${day}</span>`)
             .join('')}
         </div>
       </article>
-      <article class="card total-xp-card">
-        <h3>Total XP</h3>
-        <strong>${(state.user.xp / 1000).toFixed(1)}K</strong>
-        <p>+${state.user.dailyXp} XP today</p>
-        <div class="trend" aria-hidden="true"></div>
+      <article class="card total-xp-card p-3">
+        <h3 class="fs-5">Total XP</h3>
+        <strong class="d-block mt-2">${(state.user.xp / 1000).toFixed(1)}K</strong>
+        <p class="text-muted">+${state.user.dailyXp} XP today</p>
+        <div class="trend mt-2" aria-hidden="true"></div>
       </article>
     </section>
   `
@@ -294,16 +365,16 @@ function renderStreakAndXp() {
 function renderWhatsNew() {
   const feature = state.history
   return `
-    <section class="section-title-row">
-      <h3>What's New</h3>
+    <section class="section-title-row d-flex align-items-center justify-content-between mb-2">
+      <h3 class="m-0">What's New</h3>
       <button class="link-btn">View All ></button>
     </section>
-    <article class="card featured">
+    <article class="card featured d-grid gap-3 p-3 mb-1">
       <div class="featured-media">🚀</div>
-      <div class="featured-body">
+      <div class="featured-body d-flex flex-column gap-2">
         <p class="tag">${feature.category}</p>
-        <h3>${feature.title}</h3>
-        <p>On July 20, 1969, humanity took its first steps on the Moon.</p>
+        <h3 class="m-0">${feature.title}</h3>
+        <p class="text-muted">On July 20, 1969, humanity took its first steps on the Moon.</p>
         <button class="icon-btn bookmark" aria-label="Bookmark">🔖</button>
       </div>
     </article>
@@ -320,15 +391,15 @@ function renderQuestDetail() {
 
   if (id === 'attendance') {
     content = `
-      <p>Track today\'s classes and update present/absent status to keep your risk under control.</p>
-      <p class="detail-meta">Overall attendance: ${state.attendance.overall}% • ${state.attendance.warning}</p>
+      <p>Mark whether you attended school today and keep your monthly record updated.</p>
+      <p class="detail-meta text-muted small">Overall attendance: ${attendanceOverall()}%</p>
     `
   }
 
   if (id === 'history') {
     content = `
       <p>${state.history.body}</p>
-      <p class="detail-meta">Source: ${state.history.source}</p>
+      <p class="detail-meta text-muted small">Source: ${state.history.source}</p>
     `
   }
 
@@ -336,12 +407,12 @@ function renderQuestDetail() {
     content = `
       <p><strong>${state.law.article}:</strong> ${state.law.title}</p>
       <p>${state.law.whatItMeans}</p>
-      <p class="detail-meta">Educational content only.</p>
+      <p class="detail-meta text-muted small">Educational content only.</p>
     `
   }
 
   if (id === 'opportunities') {
-    content = `<ul>${state.opportunities
+    content = `<ul class="mb-0">${state.opportunities
       .map((item) => `<li>${item.title} • Deadline ${item.deadline}</li>`)
       .join('')}</ul>`
   }
@@ -351,12 +422,12 @@ function renderQuestDetail() {
     content = `
       <p><strong>${story.headline}</strong></p>
       <p>${story.summary}</p>
-      <p class="detail-meta">${story.source} • ${story.date}</p>
+      <p class="detail-meta text-muted small">${story.source} • ${story.date}</p>
     `
   }
 
   return `
-    <section class="card detail-card">
+    <section class="card detail-card p-3 d-flex flex-column gap-3 mt-2">
       <button class="link-btn" data-back-home>← Back to Home</button>
       <h3>${meta.icon} ${meta.title}</h3>
       ${content}
@@ -373,12 +444,12 @@ function renderMomentumCard() {
   const ready = completed >= state.dailyChallenge.goal
 
   return `
-    <section class="card momentum-card">
-      <div class="momentum-head">
-        <h3>⚡ ${state.dailyChallenge.title}</h3>
-        <p>${completed} / ${state.dailyChallenge.goal} quests</p>
+    <section class="card momentum-card p-3 d-grid gap-2">
+      <div class="momentum-head d-flex justify-content-between align-items-center gap-2">
+        <h3 class="m-0">⚡ ${state.dailyChallenge.title}</h3>
+        <p class="m-0 text-muted">${completed} / ${state.dailyChallenge.goal} quests</p>
       </div>
-      <p>${state.dailyChallenge.task}</p>
+      <p class="mb-0">${state.dailyChallenge.task}</p>
       <div class="challenge-progress"><span style="width:${percent}%"></span></div>
       <button class="primary-btn challenge-claim" data-claim-daily ${!ready || state.dailyChallenge.claimed ? 'disabled' : ''}>
         ${
@@ -394,133 +465,263 @@ function renderMomentumCard() {
 }
 
 function renderHomeTab() {
-  if (state.activeQuestId) return `${renderTopHeader()}${renderQuestDetail()}`
-
   return `
-    ${renderTopHeader()}
     ${renderGreeting()}
-    ${renderLevelCard()}
-    ${renderMomentumCard()}
-    ${renderJourneyCard()}
-    ${renderStreakAndXp()}
-    ${renderWhatsNew()}
-  `
-}
-
-function renderQuestsTab() {
-  return `
-    <section class="panel">
-      <h2>Today's Quests</h2>
-      <p class="muted">Complete meaningful actions to earn XP.</p>
-      <div class="quest-list">
-        ${state.quests
-          .filter((quest) => quest.status !== 'locked')
-          .map((quest) => {
-            const meta = QUEST_META[quest.id]
-            return `
-              <article class="card quest-item ${questClass(quest.status)}">
-                <div>
-                  <h3>${meta.icon} ${meta.title}</h3>
-                  <p>${meta.title === 'History' ? 'Learn today\'s historical event.' : 'Complete today\'s activity to make progress.'}</p>
-                  <p class="detail-meta">+${meta.reward} XP</p>
-                </div>
-                <div class="quest-actions">
-                  <button class="link-btn" data-open-quest="${quest.id}">Start Quest</button>
-                  <button class="primary-btn" data-complete-quest="${quest.id}" ${quest.status === 'completed' ? 'disabled' : ''}>
-                    ${quest.status === 'completed' ? '✓ Completed' : 'Mark Completed'}
-                  </button>
-                </div>
-              </article>
-            `
-          })
-          .join('')}
-      </div>
-    </section>
-  `
-}
-
-function renderProgressTab() {
-  return `
-    <section class="panel">
-      <h2>Progress</h2>
-      <div class="progress-cards">
-        <article class="card metric"><p>Current Level</p><strong>${state.user.level}</strong></article>
-        <article class="card metric"><p>XP</p><strong>${state.user.xp.toLocaleString()}</strong></article>
-        <article class="card metric"><p>XP to Next Level</p><strong>${remainingXp().toLocaleString()}</strong></article>
-        <article class="card metric"><p>XP this Week</p><strong>${state.user.weeklyXp}</strong></article>
-        <article class="card metric"><p>XP this Month</p><strong>${state.user.monthlyXp}</strong></article>
-        <article class="card metric"><p>Current Streak</p><strong>${state.user.streak} days</strong></article>
-        <article class="card metric"><p>Longest Streak</p><strong>${state.user.longestStreak} days</strong></article>
-        <article class="card metric"><p>Quests Completed</p><strong>${completedQuestsCount()}</strong></article>
-      </div>
-      <article class="card achievement-block">
-        <h3>Achievements</h3>
-        <ul>${state.user.achievements.map((item) => `<li>${item}</li>`).join('')}</ul>
-      </article>
-    </section>
-  `
-}
-
-function renderRewardsTab() {
-  return `
-    <section class="panel">
-      <h2>Rewards</h2>
-      <p class="muted">Cosmetics only. XP cannot be purchased.</p>
-      <div class="rewards-grid">
-        ${state.rewards
-          .map(
-            (item) => `
-              <article class="card reward-item">
-                <p class="tag">${item.type}</p>
-                <h3>${item.name}</h3>
-                <p>${item.cost.toLocaleString()} XP</p>
-                <button class="primary-btn" ${state.user.xp < item.cost ? 'disabled' : ''}>
-                  ${state.user.xp >= item.cost ? 'Unlock' : 'Keep Progressing'}
-                </button>
-              </article>
-            `,
-          )
-          .join('')}
-      </div>
-    </section>
-  `
-}
-
-function renderProfileTab() {
-  return `
-    <section class="panel">
-      <article class="card profile-card">
-        <div class="profile-hero">🧑🏽‍🎓</div>
-        <div>
-          <h2>${state.user.name}</h2>
-          <p class="muted">Level ${state.user.level} • ${state.user.xp.toLocaleString()} XP</p>
-          <p class="muted">Streak: ${state.user.streak} days • Quests: ${completedQuestsCount()}</p>
+    <div class="dashboard-grid mt-3">
+      <div class="row g-3">
+        <div class="col-12 col-lg-8">
+          ${renderAttendanceCard()}
         </div>
-        <button class="primary-btn">Customize Character</button>
+        <div class="col-12 col-lg-4">
+          <div class="d-grid gap-3">
+            ${renderLevelCard()}
+            ${renderStreakAndXp()}
+          </div>
+        </div>
+      </div>
+    </div>
+  `
+}
+
+function renderAttendanceCard() {
+  const today = todayInfo()
+  const overall = attendanceOverall()
+  const records = attendanceRecords()
+  const recordMap = new Map(records.map((record) => [record.day, record.status]))
+  const monthIndex = new Date().getMonth()
+  const totalDays = new Date(today.year, monthIndex + 1, 0).getDate()
+  const calendarDays = Array.from({ length: totalDays }, (_, index) => index + 1)
+  const presentCount = records.filter((record) => record.status === 'present').length
+  const absentCount = records.filter((record) => record.status === 'absent').length
+  const todayLabel = state.attendance.todayStatus
+    ? state.attendance.todayStatus === 'present'
+      ? 'Marked Present'
+      : 'Marked Absent'
+    : 'Not marked yet'
+
+  return `
+    <section class="card attendance-card p-3">
+      <div class="attendance-head">
+        <div>
+          <p class="tag mb-2">School</p>
+          <h3 class="m-0">Attendance</h3>
+          <p class="text-muted mb-0">${today.weekday}, ${today.month} ${today.day}, ${today.year}</p>
+        </div>
+        <div class="attendance-score">
+          <strong>${overall}%</strong>
+          <span>Overall</span>
+        </div>
+      </div>
+
+      <div class="today-attendance">
+        <div>
+          <p class="text-muted mb-1">Today</p>
+          <h4 class="m-0">${todayLabel}</h4>
+        </div>
+        <div class="attendance-actions">
+          <button class="attendance-choice present ${state.attendance.todayStatus === 'present' ? 'active' : ''}" data-attendance-status="present">Present</button>
+          <button class="attendance-choice absent ${state.attendance.todayStatus === 'absent' ? 'active' : ''}" data-attendance-status="absent">Absent</button>
+        </div>
+      </div>
+
+      <div class="mini-calendar" aria-label="${today.month} attendance calendar">
+        <div class="calendar-title">
+          <strong>${today.month}</strong>
+          <span>${presentCount} present / ${absentCount} absent</span>
+        </div>
+        <div class="calendar-weekdays">
+          ${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day) => `<span>${day}</span>`).join('')}
+        </div>
+        <div class="calendar-grid">
+          ${calendarDays
+            .map((day) => {
+              const status = recordMap.get(day)
+              const classes = ['calendar-day']
+              if (status) classes.push(status)
+              if (day === today.day) classes.push('today')
+              return `<span class="${classes.join(' ')}">${day}</span>`
+            })
+            .join('')}
+        </div>
+      </div>
+    </section>
+  `
+}
+
+function renderLegacyAttendanceCard() {
+  return `
+    <section class="card p-3">
+      <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+        <h3 class="m-0">🗓️ Attendance</h3>
+        <p class="m-0 text-muted">Overall: ${state.attendance.overall}%</p>
+      </div>
+      <div class="attendance-progress mb-3">
+        <div class="progress" style="height: 10px;">
+          <div class="progress-bar" style="width: ${state.attendance.overall}%; background: var(--primary);"></div>
+        </div>
+        <p class="detail-meta text-muted small mt-2">${state.attendance.warning}</p>
+      </div>
+      <div class="subjects-list d-grid gap-2">
+        ${state.attendance.subjects.map(subject => `
+          <article class="card p-2" style="border: 1px solid var(--border);">
+            <div class="d-flex justify-content-between align-items-center gap-2">
+              <div>
+                <h4 class="m-0 fs-6">${subject.name}</h4>
+                <p class="m-0 text-muted small">${subject.present}/${subject.total} classes</p>
+              </div>
+              <div class="text-end">
+                <strong class="${subject.status === 'Healthy' ? 'text-success' : subject.status === 'At Risk' ? 'text-danger' : 'text-warning'}">${Math.round((subject.present / subject.total) * 100)}%</strong>
+                <p class="m-0 text-muted small">${subject.status}</p>
+              </div>
+            </div>
+          </article>
+        `).join('')}
+      </div>
+      <button class="primary-btn w-100 mt-3">Mark Today's Attendance</button>
+    </section>
+  `
+}
+
+function renderHistoryTab() {
+  return `
+    <section class="panel p-3">
+      <h2>📖 History</h2>
+      <p class="muted text-muted">Learn about today's historical event.</p>
+      <article class="card p-3 mt-3">
+        <p class="tag mb-2">${state.history.category}</p>
+        <h3 class="m-0 mb-2">${state.history.title}</h3>
+        <p class="text-muted mb-2">${state.history.period}</p>
+        <p class="mb-3">${state.history.body}</p>
+        <p class="detail-meta text-muted small">Source: ${state.history.source}</p>
       </article>
-      <article class="card profile-achievements">
-        <h3>Achievements</h3>
-        <ul>${state.user.achievements.map((item) => `<li>${item}</li>`).join('')}</ul>
+    </section>
+  `
+}
+
+function renderNewTodayTab() {
+  return `
+    <section class="panel p-3">
+      <h2>📰 New Today</h2>
+      <p class="muted text-muted">Latest news and opportunities.</p>
+      
+      <h3 class="mt-3 mb-2">Daily News</h3>
+      <div class="news-list d-grid gap-2 mb-4">
+        ${state.news.map(story => `
+          <article class="card p-3">
+            <p class="tag mb-1">${story.category}</p>
+            <h4 class="m-0 mb-2">${story.headline}</h4>
+            <p class="text-muted mb-2">${story.summary}</p>
+            <p class="detail-meta text-muted small">${story.source} • ${story.date}</p>
+          </article>
+        `).join('')}
+      </div>
+      
+      <h3 class="mb-2">Opportunities</h3>
+      <div class="opportunities-list d-grid gap-2">
+        ${state.opportunities.map(opp => `
+          <article class="card p-3">
+            <div class="d-flex justify-content-between align-items-start gap-2">
+              <div>
+                <h4 class="m-0 mb-1">${opp.title}</h4>
+                <p class="text-muted small mb-0">${opp.type}</p>
+              </div>
+              <span class="badge bg-warning text-dark">Deadline: ${opp.deadline}</span>
+            </div>
+          </article>
+        `).join('')}
+      </div>
+    </section>
+  `
+}
+
+function renderKnowTheConTab() {
+  return `
+    <section class="panel p-3">
+      <h2>⚖️ Know the Con</h2>
+      <p class="muted text-muted">Understand today's legal concept.</p>
+      <article class="card p-3 mt-3">
+        <h3 class="m-0 mb-2">${state.law.article}: ${state.law.title}</h3>
+        <div class="law-content d-grid gap-3 mt-3">
+          <div>
+            <h4 class="fs-5 mb-1">What it means</h4>
+            <p class="text-muted">${state.law.whatItMeans}</p>
+          </div>
+          <div>
+            <h4 class="fs-5 mb-1">Why it matters</h4>
+            <p class="text-muted">${state.law.whyItMatters}</p>
+          </div>
+          <div>
+            <h4 class="fs-5 mb-1">Example</h4>
+            <p class="text-muted">${state.law.example}</p>
+          </div>
+          <div>
+            <h4 class="fs-5 mb-1">Qualification</h4>
+            <p class="text-muted">${state.law.qualification}</p>
+          </div>
+        </div>
+        <p class="detail-meta text-muted small mt-3">Source: ${state.law.source}</p>
       </article>
-      <button id="sendSuggestion" class="link-btn">Send a suggestion</button>
+    </section>
+  `
+}
+
+function renderMoreTab() {
+  return `
+    <section class="panel p-3">
+      <h2>☰ More</h2>
+      <p class="muted text-muted">Account settings and preferences.</p>
+      
+      <article class="card p-3 mt-3 d-grid gap-3">
+        <div class="d-flex align-items-center gap-3">
+          <div class="profile-hero" style="width: 60px; height: 60px; font-size: 30px;">🧑🏽‍🎓</div>
+          <div>
+            <h3 class="m-0">${state.user.name}</h3>
+            <p class="text-muted m-0">Level ${state.user.level} • ${state.user.xp.toLocaleString()} XP</p>
+          </div>
+        </div>
+        
+        <div class="d-grid gap-2 mt-2">
+          <button class="link-btn text-start p-2">Edit Profile</button>
+          <button class="link-btn text-start p-2">Change Theme</button>
+          <button class="link-btn text-start p-2">Notifications</button>
+          <button class="link-btn text-start p-2">Privacy Settings</button>
+          <button class="link-btn text-start p-2">Help & Support</button>
+          <button class="link-btn text-start p-2">About COOKED?</button>
+        </div>
+        
+        <div class="mt-3 pt-3" style="border-top: 1px solid var(--border);">
+          <h4 class="fs-5 mb-2">Description</h4>
+          <p class="text-muted small">COOKED? is your gamified student companion. Track attendance, learn history, understand law, and discover opportunities - all while earning XP and leveling up your character.</p>
+        </div>
+        
+        <button class="primary-btn mt-2">Sign Out</button>
+      </article>
     </section>
   `
 }
 
 function renderActiveTab() {
   if (state.activeTab === 'HOME') return renderHomeTab()
-  if (state.activeTab === 'QUESTS') return renderQuestsTab()
-  if (state.activeTab === 'PROGRESS') return renderProgressTab()
-  if (state.activeTab === 'REWARDS') return renderRewardsTab()
-  return renderProfileTab()
+  if (state.activeTab === 'HISTORY') return renderHistoryTab()
+  if (state.activeTab === 'NEW_TODAY') return renderNewTodayTab()
+  if (state.activeTab === 'KNOW_THE_CON') return renderKnowTheConTab()
+  return renderMoreTab()
 }
 
 function tabIcon(tab) {
   if (tab === 'HOME') return '🏠'
-  if (tab === 'QUESTS') return '🏁'
-  if (tab === 'PROGRESS') return '📊'
-  if (tab === 'REWARDS') return '🎁'
-  return '👤'
+  if (tab === 'HISTORY') return '📖'
+  if (tab === 'NEW_TODAY') return '📰'
+  if (tab === 'KNOW_THE_CON') return '⚖️'
+  return '☰'
+}
+
+function tabLabel(tab) {
+  if (tab === 'HOME') return 'Home'
+  if (tab === 'HISTORY') return 'History'
+  if (tab === 'NEW_TODAY') return 'New Today'
+  if (tab === 'KNOW_THE_CON') return 'Know the Con'
+  return 'More'
 }
 
 function renderBottomNav() {
@@ -530,7 +731,7 @@ function renderBottomNav() {
         (tab) => `
           <button class="tab-btn ${state.activeTab === tab ? 'active' : ''}" data-tab="${tab}">
             <span>${tabIcon(tab)}</span>
-            <small>${tab}</small>
+            <small>${tabLabel(tab)}</small>
           </button>
         `,
       ).join('')}
@@ -541,6 +742,7 @@ function renderBottomNav() {
 function render() {
   app.innerHTML = `
     <div class="app-shell">
+      ${renderTopHeader()}
       <main class="mobile-surface">${renderActiveTab()}</main>
       ${renderBottomNav()}
       ${state.xpToast ? `<div class="xp-toast">${state.xpToast}</div>` : ''}
@@ -554,10 +756,19 @@ function bindEvents() {
   document.querySelectorAll('[data-tab]').forEach((button) => {
     button.addEventListener('click', () => {
       state.activeTab = button.dataset.tab
+      state.mobileMenuOpen = false
       if (state.activeTab !== 'HOME') state.activeQuestId = null
       render()
     })
   })
+
+  const mobileMenuToggle = document.querySelector('[data-toggle-mobile-menu]')
+  if (mobileMenuToggle) {
+    mobileMenuToggle.addEventListener('click', () => {
+      state.mobileMenuOpen = !state.mobileMenuOpen
+      render()
+    })
+  }
 
   document.querySelectorAll('[data-quest]').forEach((node) => {
     node.addEventListener('click', () => openQuest(node.dataset.quest))
@@ -569,6 +780,10 @@ function bindEvents() {
 
   document.querySelectorAll('[data-complete-quest]').forEach((button) => {
     button.addEventListener('click', () => markQuestCompleted(button.dataset.completeQuest))
+  })
+
+  document.querySelectorAll('[data-attendance-status]').forEach((button) => {
+    button.addEventListener('click', () => markTodayAttendance(button.dataset.attendanceStatus))
   })
 
   const claimButton = document.querySelector('[data-claim-daily]')
@@ -606,7 +821,7 @@ async function hydrateFromApis() {
     fetchOpportunities(),
   ])
 
-  if (attendance.status === 'fulfilled' && attendance.value?.overall) state.attendance = attendance.value
+  if (attendance.status === 'fulfilled' && Array.isArray(attendance.value?.records)) state.attendance = attendance.value
   if (news.status === 'fulfilled' && Array.isArray(news.value) && news.value.length) state.news = news.value
   if (history.status === 'fulfilled' && history.value?.title) state.history = history.value
   if (law.status === 'fulfilled' && law.value?.title) state.law = law.value
