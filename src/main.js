@@ -2,12 +2,12 @@ import 'bootstrap/dist/css/bootstrap.min.css'
 import './bootstrap-studio.css'
 import './bootstrap-studio.js'
 import './style.css'
-import { PixelAvatar, createPixelAvatar, AVATAR_OPTIONS } from './pixelAvatar.js'
+import { PixelAvatar, createPixelAvatar } from './pixelAvatar.js'
+import { renderPixelAvatarSvg } from './pixelAvatarSvg.js'
 import {
   claimDailyChallenge as claimDailyChallengeRequest,
   completeQuest as completeQuestRequest,
   fetchBootstrap,
-  saveAttendance,
   submitSuggestion,
   saveGoals,
   updateGoalProgress,
@@ -41,15 +41,15 @@ const AVATAR_SKIN_TONES = ['#f6d3bd', '#dfa07c', '#bd7a58', '#8d573f', '#603829'
 // Pixel Avatar state
 let pixelAvatar = null
 const PIXEL_AVATAR_DEFAULT = {
-  body: '#4a90e2',
+  body: '#f0b08e',
   hair: 'messy',
-  hairColor: '#2c3e50',
-  skin: '#bd7a58',
-  eyes: 'round',
-  eyeColor: '#ffffff',
-  hoodie: '#4a90e2',
-  pants: '#2c3e50',
-  shoes: '#1a252f',
+  hairColor: '#4b312b',
+  skin: '#f0b08e',
+  eyes: 'normal',
+  eyeColor: '#261918',
+  hoodie: '#252a34',
+  pants: '#171a22',
+  shoes: '#f1f2ec',
   accessory: 'none',
   direction: 'front',
   animation: 'idle',
@@ -81,6 +81,15 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => HTML_ESCAPE_MAP[char])
 }
 
+function constrainAvatarPosition(position) {
+  const maxX = 120
+  const maxY = 120
+  return {
+    x: Math.max(-maxX, Math.min(maxX, Number(position?.x) || 0)),
+    y: Math.max(-maxY, Math.min(maxY, Number(position?.y) || 0)),
+  }
+}
+
 function loadAvatarPositions() {
   try {
     const saved = JSON.parse(localStorage.getItem('cooked-avatar-positions') || '{}')
@@ -88,7 +97,7 @@ function loadAvatarPositions() {
       Object.entries(saved).flatMap(([tab, position]) => {
         const x = Number(position?.x)
         const y = Number(position?.y)
-        return TABS.includes(tab) && Number.isFinite(x) && Number.isFinite(y) ? [[tab, { x, y }]] : []
+        return TABS.includes(tab) && Number.isFinite(x) && Number.isFinite(y) ? [[tab, constrainAvatarPosition({ x, y })]] : []
       }),
     )
   } catch {
@@ -139,10 +148,10 @@ const state = {
   syllabus: null,
   syllabusView: 'list',
   syllabusText: '',
+  syllabusFile: null,
   notifications: [],
   notificationsOpen: false,
-  attendanceMonth: new Date().toISOString().slice(0, 7),
-  attendanceDate: new Date().toISOString().slice(0, 10),
+  goalsView: 'syllabus',
   avatarCustomizationOpen: false,
 }
 
@@ -185,22 +194,12 @@ function applyProfile(profile) {
   state.law = profile.law
   state.news = profile.news
   state.opportunities = profile.opportunities
-  state.quests = profile.quests
+  state.quests = (profile.quests || []).filter((quest) => quest.id !== 'attendance')
   state.dailyChallenge = profile.dailyChallenge
   state.milestones = profile.milestones || {}
   state.goals = profile.goals || null
   state.syllabus = profile.syllabus || null
   state.notifications = profile.notifications || state.notifications || []
-}
-
-async function markTodayAttendance(status) {
-  try {
-    applyProfile(await saveAttendance(state.attendanceDate, status))
-    render()
-  } catch {
-    state.xpToast = 'Could not save attendance'
-    render()
-  }
 }
 
 function levelProgress() {
@@ -289,36 +288,22 @@ function avatarPosition() {
 }
 
 function saveAvatarPosition(position) {
-  state.avatarPositions[state.activeTab] = position
+  state.avatarPositions[state.activeTab] = constrainAvatarPosition(position)
   localStorage.setItem('cooked-avatar-positions', JSON.stringify(state.avatarPositions))
 }
 
 function renderAvatar() {
-  const avatar = normalizeAvatar(state.user.avatar)
-  
-  // If pixel avatar is configured, use it
-  if (state.user.pixelAvatar && pixelAvatar) {
-    return `<canvas class="pixel-avatar-canvas" width="96" height="96"></canvas>`
-  }
-  
-  // Fallback to old avatar
-  return `
-    <span class="app-avatar hair-${avatar.hair}" aria-hidden="true" style="--avatar-shirt:${avatar.shirt}; --avatar-skin:${avatar.skin};">
-      <span class="avatar-shirt"></span>
-      <span class="avatar-neck"></span>
-      <span class="avatar-ear avatar-ear-left"></span>
-      <span class="avatar-ear avatar-ear-right"></span>
-      <span class="avatar-face">
-        <span class="avatar-brow avatar-brow-left"></span>
-        <span class="avatar-brow avatar-brow-right"></span>
-        <span class="avatar-eye avatar-eye-left"></span>
-        <span class="avatar-eye avatar-eye-right"></span>
-        <span class="avatar-nose"></span>
-        <span class="avatar-mouth"></span>
-      </span>
-      <span class="avatar-hair"></span>
-    </span>
-  `
+  const pixelConfig = state.user.pixelAvatar || PIXEL_AVATAR_DEFAULT
+  return renderPixelAvatarSvg({
+    expression: pixelConfig.expression,
+    motion: pixelConfig.animation === 'walk' ? 'walk' : 'idle',
+    hoodieColor: pixelConfig.hoodie,
+    skinColor: pixelConfig.skin,
+    hairColor: pixelConfig.hairColor,
+    pantsColor: pixelConfig.pants,
+    shoesColor: pixelConfig.shoes,
+    className: 'app-avatar',
+  })
 }
 
 function renderFloatingAvatar() {
@@ -353,31 +338,40 @@ function renderTopHeader() {
 }
 
 function goalSubjects(exam) {
+  if (exam === 'FREE') return []
   return exam === 'NEET'
     ? [{ key: 'physics', label: 'Physics', short: 'P' }, { key: 'chemistry', label: 'Chemistry', short: 'C' }, { key: 'biology', label: 'Biology', short: 'B' }]
     : [{ key: 'physics', label: 'Physics', short: 'P' }, { key: 'chemistry', label: 'Chemistry', short: 'C' }, { key: 'maths', label: 'Mathematics', short: 'M' }]
 }
 
 function renderGoalTargetFields(exam) {
+  if (exam === 'FREE') return renderGoalModeFields('questions')
   return `<div class="goal-target-fields">${goalSubjects(exam).map((subject) => `<label><span><b>${subject.short}</b> ${subject.label}</span><input name="${subject.key}" type="number" min="0" max="1000" inputmode="numeric" placeholder="0"><small>questions</small></label>`).join('')}</div>`
 }
 
 function renderGoalsSetup() {
   return `
     <section class="goals-setup card p-4">
-      <p class="tag mb-2">Daily goals</p>
-      <h2 class="mb-2">Make a plan you can actually finish.</h2>
-      <p class="text-muted">Set the number of questions you want to solve each day. You can change this whenever you need.</p>
-      <p class="goals-privacy-note">🔒 THIS IS PERSONAL — NO ONE IS GONNA SEE THIS. PUT THE CORRECT NUMBER.</p>
+      <p class="tag mb-2">Today’s goals</p>
+      <h2 class="mb-2">Choose what you want to finish today.</h2>
+      <p class="text-muted">Questions and subject-wise study are separate plans. Choose one to get started.</p>
       <form id="goalsSetup" class="goals-form">
-        <fieldset><legend>I'm preparing for</legend><div class="exam-options"><label><input type="radio" name="exam" value="JEE" checked><span>JEE</span></label><label><input type="radio" name="exam" value="NEET"><span>NEET</span></label></div></fieldset>
-        <div id="goalTargetFields">${renderGoalTargetFields('JEE')}</div>
-        <label class="goal-note-field">Note <textarea name="note" rows="3" maxlength="2000" placeholder="Write a study note, reminder, or plan. Targets are optional."></textarea></label>
-        <p class="small text-muted mb-0">Add targets, a note, or both. You can start with notes and add targets later.</p>
-        <button class="primary-btn goal-save-btn" type="submit">Start my daily goal →</button>
+        <div class="goal-mode-picker" role="tablist" aria-label="Goal type">
+          <button type="button" class="active" data-goal-mode="questions">Questions</button>
+          <button type="button" data-goal-mode="subjects">Subject-wise goals</button>
+        </div>
+        <div id="goalTargetFields">${renderGoalModeFields('questions')}</div>
+        <button class="primary-btn goal-save-btn" type="submit">Save today’s goals →</button>
       </form>
     </section>
   `
+}
+
+function renderGoalModeFields(mode) {
+  if (mode === 'subjects') {
+    return `<div class="subject-goal-fields"><label class="goal-field"><span>Subject</span><input name="customSubject" maxlength="80" placeholder="e.g. History, English, Computer Science"></label><label class="goal-field"><span>What should be completed?</span><textarea name="customNote" rows="4" maxlength="1000" placeholder="Read a chapter, revise a topic, finish an assignment..."></textarea></label><label class="goal-field"><span>Target date (optional)</span><input name="customDate" type="date"></label></div>`
+  }
+  return `<div class="question-goal-fields"><div class="goal-field"><span>Preset subjects</span><div class="preset-bubbles"><button type="button" class="preset-bubble active" data-goal-preset="CUSTOM">Any subject</button><button type="button" class="preset-bubble" data-goal-preset="JEE">JEE</button><button type="button" class="preset-bubble" data-goal-preset="NEET">NEET</button></div><input type="hidden" name="exam" value="FREE"></div><label class="goal-field"><span>Subject</span><input name="customSubject" maxlength="80" placeholder="e.g. Physics or History"></label><label class="goal-field"><span>Target questions</span><input name="customTarget" type="number" min="0" max="1000" placeholder="0"></label><label class="goal-field"><span>Note (optional)</span><textarea name="customNote" rows="3" maxlength="1000" placeholder="What should be practiced?"></textarea></label></div>`
 }
 
 
@@ -392,9 +386,9 @@ function renderSyllabusUpload() {
         <div class="file-upload-area" data-syllabus-upload>
           <input type="file" id="syllabusFile" accept=".pdf,.docx,.txt,.doc" style="display:none" data-syllabus-file>
           <button type="button" class="secondary-btn" data-trigger-file-upload>
-            F8C1 Choose File
+            Choose File
           </button>
-          <span class="file-name" id="syllabusFileName">No file selected</span>
+          <span class="file-name" id="syllabusFileName">${escapeHtml(state.syllabusFile?.name || 'No file selected')}</span>
           <p class="text-muted small mb-0">PDF, DOCX, TXT (Max 5MB)</p>
         </div>
         
@@ -405,8 +399,8 @@ function renderSyllabusUpload() {
           <textarea id="syllabusText" class="form-control" rows="6" placeholder="Paste your syllabus here..." value="${escapeHtml(state.syllabusText || '')}"></textarea>
         </div>
         
-        <button class="primary-btn" type="button" data-process-syllabus ${!state.syllabusText?.trim() ? 'disabled' : ''}>
-          Process Syllabus F889
+        <button class="primary-btn" type="button" data-process-syllabus ${!state.syllabusText?.trim() && !state.syllabusFile ? 'disabled' : ''}>
+          Process Syllabus
         </button>
       </div>
       
@@ -441,8 +435,8 @@ function renderSyllabusList() {
           <h3 class="m-0">Your Syllabus</h3>
         </div>
         <div class="syllabus-actions d-flex gap-2">
-          <button class="icon-btn" data-syllabus-view="table" title="Table view">F4C4</button>
-          <button class="icon-btn" data-clear-syllabus title="Clear syllabus">F5D1</button>
+          <button class="icon-btn" data-syllabus-view="table" title="Table view">&#x1F4C4;</button>
+          <button class="icon-btn" data-clear-syllabus title="Clear syllabus">&#x1F5D1;</button>
         </div>
       </div>
       
@@ -508,7 +502,8 @@ function renderSyllabusTable() {
       groupedByDate[item.date].items.push({
         subject: topic.subject,
         topic: topic.topic,
-        completed: topic.completed || false
+        completed: topic.completed || false,
+        note: topic.note || '',
       })
     })
   })
@@ -523,7 +518,8 @@ function renderSyllabusTable() {
       groupedByDate[dateKey].items.push({
         subject: topic.subject,
         topic: topic.topic,
-        completed: topic.completed || false
+        completed: topic.completed || false,
+        note: topic.note || '',
       })
     }
   })
@@ -542,8 +538,8 @@ function renderSyllabusTable() {
           <h3 class="m-0">Your Syllabus Table</h3>
         </div>
         <div class="syllabus-actions d-flex gap-2">
-          <button class="icon-btn" data-syllabus-view="list" title="List view">F4C3</button>
-          <button class="icon-btn" data-clear-syllabus title="Clear syllabus">F5D1</button>
+          <button class="icon-btn" data-syllabus-view="list" title="List view">&#x1F4C3;</button>
+          <button class="icon-btn" data-clear-syllabus title="Clear syllabus">&#x1F5D1;</button>
         </div>
       </div>
       
@@ -555,6 +551,7 @@ function renderSyllabusTable() {
               <th>Date</th>
               <th>Subject</th>
               <th>Topics</th>
+              <th>Notes</th>
               <th style="width:80px">Status</th>
             </tr>
           </thead>
@@ -570,9 +567,10 @@ function renderSyllabusTable() {
                            data-topic="${item.topic}" 
                            ${item.completed ? 'checked' : ''}>
                   </td>
-                  <td>${date === 'Unscheduled' ? '' : date}</td>
+                  <td><input class="syllabus-date-input" type="date" data-topic-date data-subject="${item.subject}" data-topic="${escapeHtml(item.topic)}" value="${date === 'Unscheduled' ? '' : date}"></td>
                   <td><span class="subject-badge">${escapeHtml(item.subject)}</span></td>
                   <td>${escapeHtml(item.topic)}</td>
+                  <td><input class="syllabus-note-input" type="text" data-topic-note data-subject="${item.subject}" data-topic="${escapeHtml(item.topic)}" value="${escapeHtml(item.note || '')}" placeholder="Add a note"></td>
                   <td><span class="status-pill ${item.completed ? 'completed' : 'pending'}">${item.completed ? 'Done' : 'Pending'}</span></td>
                 </tr>
               `).join('')
@@ -609,11 +607,28 @@ function updateSyllabusTopicCompletion(subject, topic, completed) {
   state.syllabus = syllabus
 }
 
+function updateSyllabusTopicField(subject, topic, field, value) {
+  if (!state.syllabus) return
+  const syllabus = JSON.parse(JSON.stringify(state.syllabus))
+  syllabus.topics.forEach((item) => {
+    if (item.subject === subject && item.topic === topic) item[field] = value
+  })
+  syllabus.schedule.forEach((item) => item.topics.forEach((entry) => {
+    if (entry.subject === subject && entry.topic === topic) entry[field] = value
+  }))
+  state.syllabus = syllabus
+  saveSyllabus(state.syllabus).catch(() => {})
+}
+
 
 function renderGoalsTab() {
-  if (!state.goals?.exam) return renderGoalsSetup()
+  const view = state.goalsView || 'syllabus'
+  if (view === 'syllabus') {
+    return `<section class="goals-workspace"><div class="goals-tabs" role="tablist"><button class="${view === 'syllabus' ? 'active' : ''}" data-goals-view="syllabus">Syllabus</button><button data-goals-view="today">Today’s goals</button></div>${state.syllabus ? renderSyllabusView() : renderSyllabusUpload()}</section>`
+  }
+  if (!state.goals?.exam) return `<section class="goals-workspace"><div class="goals-tabs" role="tablist"><button data-goals-view="syllabus">Syllabus</button><button class="active" data-goals-view="today">Today’s goals</button></div>${renderGoalsSetup()}</section>`
   const { exam, targets = {}, progress = {} } = state.goals
-  const subjects = goalSubjects(exam)
+  const subjects = Object.keys(targets).map((key) => ({ key, label: key.replace(/[-_]/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()), short: key.slice(0, 1).toUpperCase() }))
   const targetTotal = subjects.reduce((sum, subject) => sum + (targets[subject.key] || 0), 0)
   const progressTotal = subjects.reduce((sum, subject) => sum + Math.min(progress[subject.key] || 0, targets[subject.key] || 0), 0)
   const complete = targetTotal > 0 && progressTotal >= targetTotal
@@ -623,14 +638,13 @@ function renderGoalsTab() {
   const showSyllabusUpload = !state.syllabus
   
   return `
-    <section class="goals-hero card p-4"><div><p class="tag mb-2">${exam} prep</p><h2 class="mb-1">Your daily question goal</h2><p class="text-muted mb-0">Small, honest targets. Real momentum.</p></div><div class="goal-score ${complete ? 'complete' : ''}"><strong>${percent}%</strong><span>today</span></div></section>
-    ${showSyllabusUpload ? renderSyllabusUpload() : renderSyllabusView()}
+    <section class="goals-workspace"><div class="goals-tabs" role="tablist"><button data-goals-view="syllabus">Syllabus</button><button class="active" data-goals-view="today">Today’s goals</button></div><section class="goals-hero card p-4"><div><p class="tag mb-2">${exam === 'FREE' ? 'Custom goals' : `${exam} preset`}</p><h2 class="mb-1">Your daily goals</h2><p class="text-muted mb-0">Small, honest targets. Real momentum.</p></div><div class="goal-score ${complete ? 'complete' : ''}"><strong>${percent}%</strong><span>today</span></div></section>
     <section class="card goals-progress-card p-3 mt-3">
       <div class="d-flex justify-content-between align-items-center gap-2 mb-3"><h3 class="m-0">Today's progress</h3><span class="text-muted small">${progressTotal} / ${targetTotal} questions</span></div><div class="goal-overall-progress mb-3"><span style="width:${percent}%"></span></div>
       <div class="goal-list">${subjects.map((subject) => { const target = targets[subject.key] || 0; const done = Math.min(progress[subject.key] || 0, target); const subjectPercent = target ? Math.round((done / target) * 100) : 0; return `<article class="goal-subject ${done >= target && target ? 'done' : ''}"><div class="goal-subject-heading"><span class="goal-letter">${subject.short}</span><strong>${subject.label}</strong><span>${done} / ${target}</span></div><div class="goal-overall-progress"><span style="width:${subjectPercent}%"></span></div><div class="goal-stepper"><button type="button" data-goal-step="${subject.key}" data-goal-change="-1" ${done <= 0 ? 'disabled' : ''}>−</button><strong>${done}</strong><button type="button" data-goal-step="${subject.key}" data-goal-change="1" ${done >= target ? 'disabled' : ''}>+</button></div></article>` }).join('')}</div>
       ${state.goals.note ? `<article class="goal-note"><strong>Note</strong><p>${escapeHtml(state.goals.note)}</p></article>` : ''}
       <form id="goalNoteForm" class="goal-note-form mt-3"><textarea name="note" rows="2" maxlength="2000" placeholder="Add a note without changing your targets">${escapeHtml(state.goals.note || '')}</textarea><button class="link-btn" type="submit">Save note</button></form>
-      <div class="goal-celebration ${complete ? 'show' : ''}">${complete ? '🎉 Goal complete! You kept your promise to yourself.' : 'Every question counts — keep going.'}</div><button class="link-btn mt-3" type="button" data-edit-goals>Edit goals</button>
+      <div class="goal-celebration ${complete ? 'show' : ''}">${complete ? '🎉 Goal complete! You kept your promise to yourself.' : 'Every question counts — keep going.'}</div><button class="link-btn mt-3" type="button" data-edit-goals>Edit goals</button></section></section>
     </section>
   `
 }
@@ -837,7 +851,7 @@ function renderHomeTab() {
     <div class="dashboard-grid mt-3">
       <div class="row g-3">
         <div class="col-12 col-lg-8">
-          ${renderAttendanceCard()}
+          ${renderJourneyCard()}
         </div>
         <div class="col-12 col-lg-4">
           <div class="d-grid gap-3">
@@ -848,7 +862,6 @@ function renderHomeTab() {
       </div>
     </div>
     <div class="home-secondary-grid mt-3">
-      ${renderJourneyCard()}
       <div class="d-grid gap-3">
         ${renderMomentumCard()}
         ${renderWhatsNew()}
@@ -1000,7 +1013,7 @@ function renderMoreTab() {
         </div>
         <div class="mt-3 pt-3" style="border-top: 1px solid var(--border);">
           <h4 class="fs-5 mb-2">About STUDY TRACKER</h4>
-          <p class="text-muted small">STUDY TRACKER is your gamified student companion. Track attendance, learn history, understand law, and discover opportunities - all while earning XP and leveling up your character.</p>
+          <p class="text-muted small">STUDY TRACKER is your gamified student companion. Set goals, organize your syllabus, learn history, understand law, and discover opportunities while leveling up your character.</p>
         </div>
       </article>
     </section>
@@ -1014,12 +1027,19 @@ function renderNotificationsPanel() {
 
 
 function renderAvatarCustomizer() {
-  const avatar = normalizeAvatar(state.user.avatar)
+  const config = { ...PIXEL_AVATAR_DEFAULT, ...(state.user.pixelAvatar || {}) }
   return `<article class="card avatar-customizer mt-3">
-    <div class="avatar-customizer-head"><div><h3>Customize your avatar</h3><p>It will look the same everywhere in STUDY TRACKER</p></div><div class="avatar-preview">${renderAvatar()}</div></div>
-    <div class="avatar-control"><label for="avatarShirtColor">T-shirt color</label><div class="shirt-color-row"><input id="avatarShirtColor" type="color" value="${avatar.shirt}" data-avatar-shirt><span class="shirt-color-swatch" style="--swatch:${avatar.shirt}"></span><small>Pick any color</small></div></div>
-    <div class="avatar-control"><span>Hairstyle</span><div class="avatar-choice-row">${AVATAR_HAIRSTYLES.map((hair) => `<button type="button" class="avatar-choice ${avatar.hair === hair ? 'selected' : ''}" data-avatar-hair="${hair}"><span class="avatar-choice-head hair-sample-${hair}"></span>${hair}</button>`).join('')}</div></div>
-    <div class="avatar-control"><span>Skin tone</span><div class="skin-tone-row">${AVATAR_SKIN_TONES.map((skin) => `<button type="button" class="skin-tone ${avatar.skin === skin ? 'selected' : ''}" style="--skin-tone:${skin}" data-avatar-skin="${skin}" aria-label="Select skin tone"></button>`).join('')}</div></div>
+    <div class="avatar-customizer-head"><div><h3>Customize your avatar</h3><p>The same character appears across the app.</p></div><div class="avatar-preview">${renderAvatar()}</div></div>
+    <div class="avatar-layer-grid">
+      <label class="goal-field"><span>Hair color</span><input type="color" value="${config.hairColor}" data-pixel-option="hairColor"></label>
+      <label class="goal-field"><span>Skin tone</span><input type="color" value="${config.skin}" data-pixel-option="skin"></label>
+      <label class="goal-field"><span>Hoodie color</span><input type="color" value="${config.hoodie}" data-pixel-option="hoodie"></label>
+      <label class="goal-field"><span>Pants color</span><input type="color" value="${config.pants}" data-pixel-option="pants"></label>
+      <label class="goal-field"><span>Shoes color</span><input type="color" value="${config.shoes}" data-pixel-option="shoes"></label>
+      <label class="goal-field"><span>Expression</span><select data-pixel-option="expression"><option value="neutral" ${config.expression === 'neutral' ? 'selected' : ''}>Neutral</option><option value="happy" ${config.expression === 'happy' ? 'selected' : ''}>Happy</option><option value="sad" ${config.expression === 'sad' ? 'selected' : ''}>Sad</option><option value="surprised" ${config.expression === 'surprised' ? 'selected' : ''}>Surprised</option><option value="blink" ${config.expression === 'blink' ? 'selected' : ''}>Blink</option></select></label>
+      <label class="goal-field"><span>Motion</span><select data-pixel-option="animation"><option value="idle" ${config.animation === 'idle' ? 'selected' : ''}>Idle breathing</option><option value="walk" ${config.animation === 'walk' ? 'selected' : ''}>Walk</option></select></label>
+    </div>
+    <button class="primary-btn mt-3" type="button" data-save-pixel-avatar>Save avatar</button>
   </article>`
 }
 
@@ -1037,8 +1057,8 @@ function renderSettingsTab() {
       ${section === 'profile' ? renderAvatarCustomizer() : ''}
       ${section === 'profile' ? `<article class="card settings-profile mt-3"><div class="d-flex align-items-center gap-3"><div class="profile-hero">${renderAvatar()}</div><div class="flex-grow-1"><h3 class="m-0">${state.user.name}</h3><p class="text-muted m-0">Level ${state.user.level} • ${state.user.xp.toLocaleString()} XP</p></div><button class="settings-edit" type="button" data-edit-profile aria-label="Edit profile">✎</button></div></article>` : ''}
       ${section === 'appearance' ? `<article class="card settings-card mt-3"><div class="settings-row"><div class="settings-row-icon palette">◐</div><div><strong>Theme</strong><p>Choose what feels best for your eyes.</p></div></div><div class="theme-picker" role="group" aria-label="Color theme"><button type="button" class="${theme === 'Light' ? 'selected' : ''}" data-set-theme="light">☀ Light</button><button type="button" class="${theme === 'Dark' ? 'selected' : ''}" data-set-theme="dark">☾ Dark</button></div></article>` : ''}
-      ${section === 'notifications' ? `<article class="card settings-card settings-list mt-3"><button type="button" class="settings-row settings-action" data-notifications-toggle><span class="settings-row-icon bell-row">♢</span><span class="settings-row-copy"><strong>Notifications</strong><small>Daily reminders and updates</small></span><span class="settings-toggle ${notifications === 'On' ? 'on' : ''}" aria-hidden="true"><span></span></span><span class="settings-status ${notifications === 'On' ? 'on' : ''}">${notifications}</span><span class="settings-chevron">›</span></button></article>` : ''}
-      ${section === 'privacy' ? `<article class="card settings-card mt-3"><div class="settings-row"><div class="settings-row-icon lock-row">⌑</div><div><strong>Privacy</strong><p>Your goals and attendance stay on your device or your own server.</p></div></div><button class="primary-btn mt-3" type="button" data-privacy>Review privacy</button></article>` : ''}
+      ${section === 'notifications' ? `<article class="card settings-card settings-list mt-3"><button type="button" class="settings-row settings-action" data-notifications-toggle><span class="settings-row-icon bell-row">♢</span><span class="settings-row-copy"><strong>Notifications</strong><small>Daily reminders and updates</small></span><span class="settings-toggle ${notifications === 'On' ? 'on' : 'off'}" role="switch" aria-checked="${notifications === 'On'}"><span></span></span><span class="settings-chevron">›</span></button></article>` : ''}
+      ${section === 'privacy' ? `<article class="card settings-card mt-3"><div class="settings-row"><div class="settings-row-icon lock-row">⌑</div><div><strong>Privacy</strong><p>Your goals and syllabus stay on your device or your own server.</p></div></div><button class="primary-btn mt-3" type="button" data-privacy>Review privacy</button></article>` : ''}
       ${section === 'help' ? `<article class="card settings-card settings-support mt-3"><div><h4>Need a hand?</h4><p>Send feedback or tell us what went wrong.</p></div><input id="supportSubject" class="form-control" maxlength="120" placeholder="What can we help with?"><textarea id="supportMessage" class="form-control" rows="3" maxlength="2000" placeholder="Tell us a little more..."></textarea><button class="primary-btn" type="button" id="sendSupport">Send message</button><details><summary>Send a suggestion instead</summary><textarea id="suggestionInput" class="form-control mt-2" rows="3" maxlength="1000" placeholder="What would make STUDY TRACKER better?"></textarea><button class="link-btn mt-2" type="button" id="sendSuggestion">Send suggestion →</button></details></article>` : ''}
     </section>
   `
@@ -1060,7 +1080,6 @@ function tabIcon(tab) {
     NEW_TODAY: '\u1f4f0',
     SETTINGS: '\u2699',
   }[tab]
-}
 }
 
 function renderBottomNav() {
@@ -1129,9 +1148,7 @@ function renderPixelAvatarCustomizer() {
           <h3>Customize Pixel Avatar</h3>
           <p>Create your unique student avatar with pixel art style.</p>
         </div>
-        <div class="pixel-avatar-preview">
-          <canvas id="pixelAvatarPreview" width="128" height="128"></canvas>
-        </div>
+        <div class="pixel-avatar-preview" id="pixelAvatarPreview"></div>
       </div>
       
       <div class="pixel-customizer-controls d-grid gap-3">
@@ -1289,22 +1306,39 @@ function bindEvents() {
 
   const goalsForm = document.querySelector('#goalsSetup')
   if (goalsForm) {
-    goalsForm.querySelectorAll('input[name="exam"]').forEach((input) => input.addEventListener('change', () => {
-      document.querySelector('#goalTargetFields').innerHTML = renderGoalTargetFields(input.value)
+    let goalMode = 'questions'
+    goalsForm.querySelectorAll('[data-goal-mode]').forEach((button) => button.addEventListener('click', () => {
+      goalMode = button.dataset.goalMode
+      goalsForm.querySelectorAll('[data-goal-mode]').forEach((item) => item.classList.toggle('active', item === button))
+      document.querySelector('#goalTargetFields').innerHTML = renderGoalModeFields(goalMode)
     }))
+    goalsForm.addEventListener('click', (event) => {
+      const preset = event.target.closest('[data-goal-preset]')
+      if (!preset) return
+      goalsForm.querySelectorAll('[data-goal-preset]').forEach((item) => item.classList.toggle('active', item === preset))
+      const exam = preset.dataset.goalPreset
+      const hiddenExam = goalsForm.querySelector('[name="exam"]')
+      if (hiddenExam) hiddenExam.value = exam === 'CUSTOM' ? 'FREE' : exam
+      const subject = goalsForm.querySelector('[name="customSubject"]')
+      if (subject && exam !== 'CUSTOM') subject.value = exam === 'JEE' ? 'JEE subjects' : 'NEET subjects'
+    })
     goalsForm.addEventListener('submit', async (event) => {
       event.preventDefault()
       const form = new FormData(goalsForm)
-      const exam = form.get('exam')
-      const targets = Object.fromEntries(goalSubjects(exam).map((subject) => [subject.key, Math.max(0, Number(form.get(subject.key)) || 0)]))
+      const exam = String(form.get('exam') || 'FREE')
+      const goalType = goalMode === 'subjects' ? 'subject' : 'questions'
+      const customSubject = String(form.get('customSubject') || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')
+      const subjects = exam === 'FREE' ? (customSubject ? [customSubject] : []) : goalSubjects(exam).map((subject) => subject.key)
+      const targets = Object.fromEntries(subjects.map((subject) => [subject, Math.max(0, Number(form.get(subject) || form.get('customTarget')) || 0)]))
       const note = String(form.get('note') || '').trim()
-      if (!Object.values(targets).some((value) => value > 0) && !note) {
+      const combinedNote = [note, String(form.get('customNote') || '').trim()].filter(Boolean).join('\n')
+      if (!customSubject && !combinedNote) {
         state.xpToast = 'Add a target or write a note'
         render()
         return
       }
       try {
-        applyProfile(await saveGoals({ exam, targets, note }))
+        applyProfile(await saveGoals({ exam, targets, note: combinedNote, goalType, targetDate: form.get('customDate') || '' }))
         render()
       } catch {
         state.xpToast = 'Could not save goals'
@@ -1312,6 +1346,11 @@ function bindEvents() {
       }
     })
   }
+
+  document.querySelectorAll('[data-goals-view]').forEach((button) => button.addEventListener('click', () => {
+    state.goalsView = button.dataset.goalsView
+    render()
+  }))
 
   document.querySelectorAll('[data-goal-step]').forEach((button) => button.addEventListener('click', async () => {
     const key = button.dataset.goalStep
@@ -1362,23 +1401,6 @@ function bindEvents() {
     const seconds = Number(readingQuest.dataset.readSeconds)
     questReadTimer = window.setTimeout(() => markQuestCompleted(readingQuest.dataset.autoCompleteQuest), seconds * 1000)
   }
-
-  document.querySelectorAll('[data-attendance-status]').forEach((button) => {
-    button.addEventListener('click', () => markTodayAttendance(button.dataset.attendanceStatus))
-  })
-
-  const attendanceDate = document.querySelector('#attendanceDate')
-  if (attendanceDate) attendanceDate.addEventListener('change', () => {
-    state.attendanceDate = attendanceDate.value
-    state.attendanceMonth = attendanceDate.value.slice(0, 7)
-    render()
-  })
-  const attendanceMonth = document.querySelector('#attendanceMonth')
-  if (attendanceMonth) attendanceMonth.addEventListener('change', () => {
-    state.attendanceMonth = attendanceMonth.value
-    state.attendanceDate = `${attendanceMonth.value}-${String(new Date(`${attendanceMonth.value}-01T00:00:00`).getDate()).padStart(2, '0')}`
-    render()
-  })
 
   const claimButton = document.querySelector('[data-claim-daily]')
   if (claimButton) {
@@ -1507,23 +1529,19 @@ function bindEvents() {
   // Pixel avatar customizer bindings
   const savePixelAvatarBtn = document.querySelector('[data-save-pixel-avatar]')
   if (savePixelAvatarBtn) {
-    savePixelAvatarBtn.addEventListener('click', () => {
+    savePixelAvatarBtn.addEventListener('click', async () => {
       const config = {
-        body: document.getElementById('pixelBodyColor')?.value || PIXEL_AVATAR_DEFAULT.body,
-        hair: document.getElementById('pixelHair')?.value || PIXEL_AVATAR_DEFAULT.hair,
-        hairColor: document.getElementById('pixelHairColor')?.value || PIXEL_AVATAR_DEFAULT.hairColor,
-        skin: document.getElementById('pixelSkin')?.value || PIXEL_AVATAR_DEFAULT.skin,
-        hoodie: document.getElementById('pixelHoodie')?.value || PIXEL_AVATAR_DEFAULT.hoodie,
-        pants: document.getElementById('pixelPants')?.value || PIXEL_AVATAR_DEFAULT.pants,
-        shoes: document.getElementById('pixelShoes')?.value || PIXEL_AVATAR_DEFAULT.shoes,
-        direction: document.getElementById('pixelDirection')?.value || PIXEL_AVATAR_DEFAULT.direction,
-        animation: document.getElementById('pixelAnimation')?.value || PIXEL_AVATAR_DEFAULT.animation,
-        expression: document.getElementById('pixelExpression')?.value || PIXEL_AVATAR_DEFAULT.expression,
-        accessory: PIXEL_AVATAR_DEFAULT.accessory
+        ...state.user.pixelAvatar,
       }
+      document.querySelectorAll('[data-pixel-option]').forEach((input) => { config[input.dataset.pixelOption] = input.value })
       
       state.user.pixelAvatar = config
       pixelAvatar = createPixelAvatar(config)
+      try {
+        applyProfile(await saveAvatar(state.user.avatar, config))
+      } catch {
+        state.xpToast = 'Avatar saved on this device.'
+      }
       state.xpToast = 'Pixel avatar saved!'
       render()
     })
@@ -1538,8 +1556,12 @@ function bindEvents() {
       }
       const config = { ...pixelAvatar.getConfig() }
       config[input.dataset.pixelOption] = input.value
+      state.user.pixelAvatar = { ...state.user.pixelAvatar, ...config }
       pixelAvatar.updateFromConfig(config)
       renderPixelAvatar()
+    })
+    input.addEventListener('change', () => {
+      input.dispatchEvent(new Event('input'))
     })
   })
 
@@ -1553,12 +1575,12 @@ function bindEvents() {
 
   const syllabusFile = document.querySelector('[data-syllabus-file]')
   if (syllabusFile) {
-    syllabusFile.addEventListener('change', (event) => {
+    syllabusFile.addEventListener('change', async (event) => {
       const file = event.target.files[0]
       if (file) {
         document.getElementById('syllabusFileName').textContent = file.name
-        // For now, just show a message - file processing would need a file upload endpoint
-        state.xpToast = 'File selected. Use text paste for now.'
+        state.syllabusFile = file
+        state.xpToast = 'File ready. Click Process Syllabus.'
         render()
       }
     })
@@ -1567,15 +1589,23 @@ function bindEvents() {
   const processSyllabusBtn = document.querySelector('[data-process-syllabus]')
   if (processSyllabusBtn) {
     processSyllabusBtn.addEventListener('click', async () => {
-      const text = document.getElementById('syllabusText')?.value?.trim()
-      if (!text) {
-        state.xpToast = 'Please enter syllabus text'
+      const text = document.getElementById('syllabusText')?.value?.trim() || ''
+      const file = state.syllabusFile
+      if (!text && !file) {
+        state.xpToast = 'Upload a syllabus or paste its text first'
         render()
         return
       }
       
       try {
-        const result = await processSyllabusText(text)
+        let fileData = ''
+        if (file) {
+          const buffer = await file.arrayBuffer()
+          let binary = ''
+          new Uint8Array(buffer).forEach((byte) => { binary += String.fromCharCode(byte) })
+          fileData = btoa(binary)
+        }
+        const result = await processSyllabusText(text, file?.name || '', fileData)
         state.syllabus = result.result
         state.syllabusText = text
         state.syllabusView = 'list'
@@ -1629,6 +1659,13 @@ function bindEvents() {
         saveSyllabus(state.syllabus).catch(() => {})
       }
       render()
+    })
+  })
+
+  document.querySelectorAll('[data-topic-date], [data-topic-note]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const field = input.hasAttribute('data-topic-date') ? 'date' : 'note'
+      updateSyllabusTopicField(input.dataset.subject, input.dataset.topic, field, input.value)
     })
   })
 
@@ -1713,21 +1750,20 @@ function initPixelAvatar() {
 
 // Render pixel avatar to canvas
 function renderPixelAvatar() {
-  if (pixelAvatar) {
-    const canvases = document.querySelectorAll('.pixel-avatar-canvas')
-    canvases.forEach(canvas => {
-      const ctx = canvas.getContext('2d')
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-      pixelAvatar.render(ctx, canvas.width, canvas.height)
+  const preview = document.getElementById('pixelAvatarPreview')
+  if (preview) {
+    const config = state.user.pixelAvatar || PIXEL_AVATAR_DEFAULT
+    preview.innerHTML = renderPixelAvatarSvg({
+      expression: config.expression,
+      motion: config.animation === 'walk' ? 'walk' : 'idle',
+      hoodieColor: config.hoodie,
+      skinColor: config.skin,
+      hairColor: config.hairColor,
+      pantsColor: config.pants,
+      shoesColor: config.shoes,
+      size: '100%',
+      className: 'pixel-avatar-preview-svg',
     })
-    
-    // Also render preview
-    const preview = document.getElementById('pixelAvatarPreview')
-    if (preview) {
-      const ctx = preview.getContext('2d')
-      ctx.clearRect(0, 0, preview.width, preview.height)
-      pixelAvatar.render(ctx, preview.width, preview.height)
-    }
   }
 }
 
@@ -1748,4 +1784,5 @@ async function hydrateFromApis() {
 }
 
 await hydrateFromApis()
+initPixelAvatar()
 render()

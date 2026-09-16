@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import base64
+import io
 import os
 import re
 from urllib.parse import urlencode
@@ -718,7 +720,7 @@ def process_syllabus_text(text: str) -> dict[str, Any]:
     
     # Patterns to detect different types of content
     date_pattern = re.compile(
-        r'\b(\d{1,2}[/-]\d{1,2}|\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}|\d{1,2}\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4})\b',
+        r'\b(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[/-]\d{1,2}|\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}|\d{1,2}\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4})\b',
         re.IGNORECASE
     )
     
@@ -756,7 +758,11 @@ def process_syllabus_text(text: str) -> dict[str, Any]:
         if date_match:
             date_str = date_match.group(1)
             try:
-                if '/' in date_str:
+                if re.fullmatch(r'\d{4}[-/]\d{1,2}[-/]\d{1,2}', date_str):
+                    year, month, day = re.split(r'[-/]', date_str)
+                    date_obj = datetime(int(year), int(month), int(day))
+                    formatted_date = date_obj.strftime('%Y-%m-%d')
+                elif '/' in date_str:
                     day, month = date_str.split('/')
                     date_obj = datetime(int(datetime.now().year), int(month), int(day))
                     formatted_date = date_obj.strftime('%Y-%m-%d')
@@ -791,7 +797,8 @@ def process_syllabus_text(text: str) -> dict[str, Any]:
         # Check for subjects
         found_subject = None
         for subj, keywords in subjects.items():
-            if any(keyword.lower() in line.lower() for keyword in keywords):
+            normalized_line = re.sub(r'[:\-–—].*$', '', line.lower()).strip()
+            if normalized_line in keywords or any(normalized_line.startswith(f'{keyword} ') for keyword in keywords):
                 found_subject = subj
                 break
         
@@ -823,6 +830,27 @@ def process_syllabus_text(text: str) -> dict[str, Any]:
                     item['topics'].append(topic)
     
     return syllabus_data
+
+
+def extract_uploaded_syllabus(file_name: str, file_data: str) -> str:
+    """Extract text from a browser-uploaded TXT, PDF, or DOCX document."""
+    raw = base64.b64decode(file_data)
+    suffix = Path(file_name or '').suffix.lower()
+    if suffix in {'.txt', '.csv', '.md'}:
+        return raw.decode('utf-8', errors='replace')
+    if suffix == '.pdf':
+        try:
+            from pypdf import PdfReader
+        except ImportError as exc:
+            raise RuntimeError('PDF support requires pypdf. Install backend/requirements.txt.') from exc
+        return '\n'.join(page.extract_text() or '' for page in PdfReader(io.BytesIO(raw)).pages)
+    if suffix == '.docx':
+        try:
+            from docx import Document
+        except ImportError as exc:
+            raise RuntimeError('DOCX support requires python-docx. Install backend/requirements.txt.') from exc
+        return '\n'.join(paragraph.text for paragraph in Document(io.BytesIO(raw)).paragraphs)
+    raise ValueError('Use a PDF, DOCX, TXT, CSV, or Markdown syllabus file.')
 
 
 # ---------------------------------------------------------------------------
@@ -1298,13 +1326,15 @@ class CookedRequestHandler(BaseHTTPRequestHandler):
     def handle_save_goals(self) -> None:
         """PUT /api/goals — Save optional question targets and an optional note."""
         payload = self.read_json()
-        exam = payload.get("exam") or "JEE"
+        exam = payload.get("exam") or "FREE"
         targets = payload.get("targets", {})
         note = str(payload.get("note", "")).strip()[:2000]
         allowed_subjects = {"JEE": {"physics", "chemistry", "maths"}, "NEET": {"physics", "chemistry", "biology"}}
-        if exam not in allowed_subjects or not isinstance(targets, dict):
-            self.send_json(HTTPStatus.BAD_REQUEST, {"error": "Choose JEE or NEET and valid targets."})
+        if exam not in {"FREE", "JEE", "NEET"} or not isinstance(targets, dict):
+            self.send_json(HTTPStatus.BAD_REQUEST, {"error": "Choose a valid goal preset and targets."})
             return
+        if exam == "FREE":
+            allowed_subjects["FREE"] = {str(subject)[:60] for subject in targets if re.fullmatch(r"[a-z0-9_]+", str(subject))}
         clean_targets: dict[str, int] = {}
         try:
             for subject in allowed_subjects[exam]:
@@ -1325,6 +1355,7 @@ class CookedRequestHandler(BaseHTTPRequestHandler):
                 "progress": {subject: 0 for subject in clean_targets},
                 "date": today_iso(),
                 "note": note,
+                "goalType": str(payload.get("goalType") or "questions"),
             }
             save_store(store)
             self.send_json(HTTPStatus.OK, store["profile"])
@@ -1376,6 +1407,7 @@ class CookedRequestHandler(BaseHTTPRequestHandler):
         """PUT /api/profile/avatar — Save the student's avatar customization."""
         payload = self.read_json()
         avatar = payload.get("avatar", {})
+        pixel_avatar = payload.get("pixelAvatar")
         allowed_hair = {"classic", "wave", "curly", "buzz"}
         allowed_skin = {"#f6d3bd", "#dfa07c", "#bd7a58", "#8d573f", "#603829"}
         shirt = avatar.get("shirt") if isinstance(avatar, dict) else None
@@ -1391,6 +1423,8 @@ class CookedRequestHandler(BaseHTTPRequestHandler):
             store = load_store()
             ensure_daily_state(store)
             store["profile"]["user"]["avatar"] = {"shirt": shirt.lower(), "skin": skin, "hair": hair}
+            if isinstance(pixel_avatar, dict):
+                store["profile"]["user"]["pixelAvatar"] = pixel_avatar
             save_store(store)
             self.send_json(HTTPStatus.OK, store["profile"])
 
@@ -1422,6 +1456,8 @@ class CookedRequestHandler(BaseHTTPRequestHandler):
         """POST /api/syllabus/process  Process syllabus text and extract structured data."""
         payload = self.read_json()
         text = payload.get("text", "")
+        if not str(text).strip() and payload.get("fileData"):
+            text = extract_uploaded_syllabus(str(payload.get("fileName") or ""), str(payload.get("fileData")))
         if not text or not text.strip():
             self.send_json(HTTPStatus.BAD_REQUEST, {"error": "Syllabus text is required."})
             return

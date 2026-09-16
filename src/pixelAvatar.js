@@ -127,10 +127,11 @@ const AVATAR_OPTIONS = {
  */
 
 class PixelAvatar {
-  constructor() {
+  constructor(customization = {}) {
     this.size = AVATAR_SIZE;
     this.scale = AVATAR_SCALE;
     this.customization = this.getDefaultCustomization();
+    this.updateFromConfig(customization);
     this.animationFrame = 0;
     this.animationTimer = 0;
     this.currentAnimation = 'idle';
@@ -914,7 +915,7 @@ class PixelAvatar {
     if (!baseRow || !overlayRow) return baseRow;
     
     const baseChars = baseRow.split('');
-    const overlayChars = overlayRow.split('');
+    const overlayChars = (Array.isArray(overlayRow) ? overlayRow.join('') : overlayRow).split('');
     
     for (let i = 0; i < overlayChars.length; i++) {
       if (overlayChars[i] === '#' && startX + i < baseChars.length) {
@@ -932,7 +933,7 @@ class PixelAvatar {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     
-    const displaySize = this.size * this.scale;
+    const displaySize = 96;
     canvas.width = displaySize;
     canvas.height = displaySize;
     
@@ -1024,7 +1025,9 @@ class PixelAvatar {
    * Draw grid on canvas
    */
   drawGridOnCanvas(ctx, grid, displaySize) {
-    const pixelSize = displaySize / this.size;
+    const pixelSize = displaySize / 10;
+    const offsetX = pixelSize / 2;
+    const offsetY = pixelSize;
     
     for (let y = 0; y < grid.length; y++) {
       const row = grid[y];
@@ -1036,8 +1039,8 @@ class PixelAvatar {
         if (char && char !== ' ') {
           ctx.fillStyle = char;
           ctx.fillRect(
-            x * pixelSize,
-            y * pixelSize,
+            offsetX + x * pixelSize,
+            offsetY + y * pixelSize,
             pixelSize,
             pixelSize
           );
@@ -1078,6 +1081,26 @@ class PixelAvatar {
   setCustomization(customization) {
     this.customization = { ...this.customization, ...customization };
   }
+
+  updateFromConfig(config = {}) {
+    this.setCustomization({
+      ...config,
+      outfit: config.hoodie || config.outfit || this.customization.outfit,
+    });
+    if (config.direction) this.setDirection(config.direction);
+    if (config.animation) this.setAnimation(config.animation);
+  }
+
+  getConfig() {
+    return { ...this.customization, hoodie: this.customization.outfit };
+  }
+
+  render(ctx, width, height) {
+    const avatarCanvas = this.renderAsCanvas();
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, width, height);
+    ctx.drawImage(avatarCanvas, 0, 0, width, height);
+  }
 }
 
 // ============================================
@@ -1087,8 +1110,8 @@ class PixelAvatar {
 /**
  * Create a new pixel avatar with default settings
  */
-function createPixelAvatar() {
-  return new PixelAvatar();
+function createPixelAvatar(customization) {
+  return new PixelAvatar(customization);
 }
 
 /**
@@ -1133,27 +1156,13 @@ function generateRandomAvatar() {
   return avatar;
 }
 
-// ============================================
-// EXPORT
-// ============================================
-
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = {
-    PixelAvatar,
-    createPixelAvatar,
-    createPixelAvatarFromSave,
-    getAvatarOptions,
-    generateRandomAvatar,
-    AVATAR_OPTIONS,
-    AVATAR_SIZE,
-    AVATAR_SCALE,
-  };
-} else {
-  // Browser global
-  window.PixelAvatar = PixelAvatar;
-  window.createPixelAvatar = createPixelAvatar;
-  window.createPixelAvatarFromSave = createPixelAvatarFromSave;
-  window.getAvatarOptions = getAvatarOptions;
-  window.generateRandomAvatar = generateRandomAvatar;
-  window.AVATAR_OPTIONS = AVATAR_OPTIONS;
-}
+export {
+  PixelAvatar,
+  createPixelAvatar,
+  createPixelAvatarFromSave,
+  getAvatarOptions,
+  generateRandomAvatar,
+  AVATAR_OPTIONS,
+  AVATAR_SIZE,
+  AVATAR_SCALE,
+};

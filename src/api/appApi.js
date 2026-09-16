@@ -53,11 +53,11 @@ export const saveProfile = (name) =>
     body: JSON.stringify({ name }),
   })
 
-export const saveAvatar = (avatar) =>
+export const saveAvatar = (avatar, pixelAvatar) =>
   request('/profile/avatar', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ avatar }),
+    body: JSON.stringify({ avatar, pixelAvatar }),
   })
 
 export const submitSupportRequest = ({ subject, message }) =>
@@ -67,11 +67,11 @@ export const submitSupportRequest = ({ subject, message }) =>
     body: JSON.stringify({ subject, message }),
   })
 
-export const processSyllabusText = (text) =>
+export const processSyllabusText = (text, fileName = '', fileData = '') =>
   request('/syllabus/process', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, fileName, fileData }),
   })
 
 export const fetchSyllabus = () => request('/syllabus')
